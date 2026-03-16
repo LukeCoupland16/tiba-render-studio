@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { AppState, AppStep, Surface, SurfaceMaterial, RenderOptions } from "@/lib/types";
+import type { AppState, AppStep, Surface, SurfaceMaterial, RenderOptions, ReferenceImage, VariantRender } from "@/lib/types";
 import { EMPTY_STATE } from "@/lib/types";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -43,6 +43,24 @@ function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }>
   });
 }
 
+// Read a material photo file as-is — no JPEG compression, preserves original format.
+// Used for material uploads so texture fidelity is not degraded by lossy compression.
+function materialFileToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      const commaIdx = dataUrl.indexOf(",");
+      const header = dataUrl.slice(0, commaIdx);
+      const base64 = dataUrl.slice(commaIdx + 1);
+      const mimeType = header.match(/data:([^;]+)/)?.[1] ?? file.type ?? "image/png";
+      resolve({ base64, mimeType });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // Compress a base64 image returned from the API before storing in state.
 function compressBase64(base64: string, mimeType: string): Promise<{ base64: string; mimeType: string }> {
   return compressImageSrc(`data:${mimeType};base64,${base64}`);
@@ -59,6 +77,11 @@ function downloadImage(base64: string, mimeType: string, filename: string) {
   a.click();
 }
 
+let refIdCounter = 0;
+function nextRefId() {
+  return `ref-${++refIdCounter}-${Date.now()}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Step indicator
 // ─────────────────────────────────────────────────────────────────────────────
@@ -66,6 +89,7 @@ function downloadImage(base64: string, mimeType: string, filename: string) {
 const STEP_ORDER: AppStep[] = [
   "upload",
   "stage1",
+  "variant-review",
   "confirm-base",
   "surfaces",
   "configure",
@@ -77,8 +101,9 @@ const STEP_ORDER: AppStep[] = [
 ];
 
 const STEP_LABELS: Record<AppStep, string> = {
-  upload: "Upload",
+  upload: "Setup",
   stage1: "Render",
+  "variant-review": "Variants",
   "confirm-base": "Confirm",
   surfaces: "Surfaces",
   configure: "Stone",
@@ -91,7 +116,7 @@ const STEP_LABELS: Record<AppStep, string> = {
 
 function StepBar({ current }: { current: AppStep }) {
   const idx = STEP_ORDER.indexOf(current);
-  const visible = ["upload", "confirm-base", "surfaces", "configure", "review", "render-options", "complete"] as AppStep[];
+  const visible = ["upload", "variant-review", "confirm-base", "configure", "review", "render-options", "complete"] as AppStep[];
   return (
     <div className="flex items-center gap-1 sm:gap-2">
       {visible.map((step, i) => {
@@ -257,6 +282,68 @@ function DropZone({
   );
 }
 
+// Multi-file drop zone for reference images
+function MultiDropZone({
+  onFiles,
+  accept = "image/*",
+  label,
+  sublabel,
+  className = "",
+}: {
+  onFiles: (files: File[]) => void;
+  accept?: string;
+  label: string;
+  sublabel?: string;
+  className?: string;
+}) {
+  const [dragging, setDragging] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith("image/"));
+      if (files.length > 0) onFiles(files);
+    },
+    [onFiles]
+  );
+
+  return (
+    <div
+      className={`drop-zone ${dragging ? "dragging" : ""} ${className}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      onClick={() => inputRef.current?.click()}
+    >
+      <input
+        ref={inputRef}
+        type="file"
+        accept={accept}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          if (files.length > 0) onFiles(files);
+        }}
+      />
+      <div className="flex flex-col items-center gap-3 p-6 text-center select-none">
+        <div className="w-10 h-10 rounded-full bg-stone-800 flex items-center justify-center">
+          <svg className="w-5 h-5 text-stone-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+              d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-stone-200 font-medium text-sm">{label}</p>
+          {sublabel && <p className="text-stone-500 text-xs mt-1">{sublabel}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Small "Change" button for replacing an already-uploaded file
 function ChangeFileButton({ onFile }: { onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -387,62 +474,6 @@ const SURFACE_FRIENDLY_NAMES: Record<string, string> = {
 
 function friendlyName(label: string) {
   return SURFACE_FRIENDLY_NAMES[label] ?? label.replace(/-/g, " ");
-}
-
-function SurfaceList({
-  surfaces,
-  selected,
-  onChange,
-}: {
-  surfaces: Surface[];
-  selected: string[];
-  onChange: (labels: string[]) => void;
-}) {
-  const toggle = (label: string) => {
-    onChange(
-      selected.includes(label)
-        ? selected.filter((s) => s !== label)
-        : [...selected, label]
-    );
-  };
-
-  return (
-    <div className="space-y-2">
-      {surfaces.map((s) => {
-        const checked = selected.includes(s.label);
-        return (
-          <button
-            key={s.label}
-            onClick={() => toggle(s.label)}
-            className={`w-full flex items-start gap-4 p-4 rounded-xl border text-left transition-all ${
-              checked
-                ? "border-gold/60 bg-gold/5"
-                : "border-stone-800 bg-stone-900 hover:border-stone-600"
-            }`}
-          >
-            <div
-              className={`mt-0.5 w-5 h-5 rounded-md border-2 flex-shrink-0 flex items-center justify-center transition-all ${
-                checked ? "bg-gold border-gold" : "border-stone-600"
-              }`}
-            >
-              {checked && (
-                <svg className="w-3 h-3 text-stone-950" fill="none" viewBox="0 0 12 12" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M2 6l3 3 5-5" />
-                </svg>
-              )}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-stone-100 font-medium text-sm">{friendlyName(s.label)}</p>
-                <span className="text-xs text-stone-500 flex-shrink-0">~{s.areaPercent}% of space</span>
-              </div>
-              <p className="text-stone-400 text-xs mt-0.5">{s.description}</p>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -706,30 +737,150 @@ export default function Home() {
     return json;
   }
 
-  // ── Stage 1: upload screenshot → base render ──────────────────────────────
+  // ── Reference image management ────────────────────────────────────────────
 
-  async function handleScreenshotUpload(file: File) {
-    set({ error: null, loading: true, loadingMessage: "Converting your drawing to a realistic photo…" });
-    try {
+  async function handleAddReferenceImages(files: File[]) {
+    const newRefs: ReferenceImage[] = [];
+    for (const file of files) {
       const { base64, mimeType } = await fileToBase64(file);
-      const previewUrl = dataUrl(base64, mimeType);
-
-      set({
-        screenshotBase64: base64,
-        screenshotMimeType: mimeType,
-        screenshotPreviewUrl: previewUrl,
-        step: "stage1",
-        loadingMessage: "Converting your drawing to a realistic photo… (this takes about 30–60 seconds)",
+      newRefs.push({
+        id: nextRefId(),
+        base64,
+        mimeType,
+        previewUrl: dataUrl(base64, mimeType),
+        inspirationNote: "",
       });
+    }
+    set({ referenceImages: [...state.referenceImages, ...newRefs] });
+  }
 
-      const result = await post<{ baseRenderBase64: string; baseRenderMimeType: string }>(
+  function updateReferenceNote(id: string, note: string) {
+    set({
+      referenceImages: state.referenceImages.map((r) =>
+        r.id === id ? { ...r, inspirationNote: note } : r
+      ),
+    });
+  }
+
+  function removeReference(id: string) {
+    set({ referenceImages: state.referenceImages.filter((r) => r.id !== id) });
+  }
+
+  // ── Stage 1 V2: Generate 3 variants automatically ─────────────────────────
+  // Auto-chains: standard → variant A → variant B — no user interaction needed
+
+  async function handleStartGeneration() {
+    const base64 = state.screenshotBase64;
+    const mimeType = state.screenshotMimeType;
+
+    if (!base64) {
+      setError("Please upload a SketchUp screenshot first.");
+      return;
+    }
+
+    set({ error: null, loading: true, step: "stage1", variants: [] });
+
+    try {
+      const variants: VariantRender[] = [];
+      const refs = state.referenceImages;
+      const hasRefs = refs.length > 0;
+      const totalCount = hasRefs ? 3 : 1;
+
+      // 1. Standard base render
+      set({ loadingMessage: `Generating standard render (1/${totalCount})… You can leave your laptop.` });
+      const stdResult = await post<{ baseRenderBase64: string; baseRenderMimeType: string }>(
         "/api/stage1",
         { screenshotBase64: base64, screenshotMimeType: mimeType }
       );
+      const stdCompressed = await compressBase64(stdResult.baseRenderBase64, stdResult.baseRenderMimeType);
+      variants.push({
+        label: "standard",
+        title: "Standard",
+        base64: stdCompressed.base64,
+        mimeType: stdCompressed.mimeType,
+      });
+      set({ variants: [...variants] });
 
-      // Compress the returned base render before storing — it gets re-sent in stages 2/3/4
-      const compressed = await compressBase64(result.baseRenderBase64, result.baseRenderMimeType);
+      if (hasRefs) {
+        // 2. Variant A — reference-inspired (faithful)
+        set({ loadingMessage: "Generating Variant A — reference-inspired (2/3)…" });
+        const varAResult = await post<{ base64: string; mimeType: string }>(
+          "/api/stage1-variant",
+          {
+            screenshotBase64: base64,
+            screenshotMimeType: mimeType,
+            references: refs.map((r) => ({
+              base64: r.base64,
+              mimeType: r.mimeType,
+              note: r.inspirationNote || "General style and proportions",
+            })),
+            variantLabel: "A",
+          }
+        );
+        const varACompressed = await compressBase64(varAResult.base64, varAResult.mimeType);
+        variants.push({
+          label: "variant-a",
+          title: "Variant A — Faithful",
+          base64: varACompressed.base64,
+          mimeType: varACompressed.mimeType,
+        });
+        set({ variants: [...variants] });
 
+        // 3. Variant B — reference-inspired (creative)
+        set({ loadingMessage: "Generating Variant B — creative interpretation (3/3)…" });
+        const varBResult = await post<{ base64: string; mimeType: string }>(
+          "/api/stage1-variant",
+          {
+            screenshotBase64: base64,
+            screenshotMimeType: mimeType,
+            references: refs.map((r) => ({
+              base64: r.base64,
+              mimeType: r.mimeType,
+              note: r.inspirationNote || "General style and proportions",
+            })),
+            variantLabel: "B",
+          }
+        );
+        const varBCompressed = await compressBase64(varBResult.base64, varBResult.mimeType);
+        variants.push({
+          label: "variant-b",
+          title: "Variant B — Creative",
+          base64: varBCompressed.base64,
+          mimeType: varBCompressed.mimeType,
+        });
+        set({ variants: [...variants] });
+      }
+
+      set({
+        variants: [...variants],
+        step: variants.length > 1 ? "variant-review" : "confirm-base",
+        baseRenderBase64: variants[0].base64,
+        baseRenderMimeType: variants[0].mimeType,
+        loading: false,
+        error: null,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Generation failed. Please try again.");
+    }
+  }
+
+  // ── Combine variants based on user feedback ───────────────────────────────
+
+  async function handleCombineVariants() {
+    const { screenshotBase64, screenshotMimeType, variants, variantFeedback } = state;
+
+    set({ error: null, loading: true, step: "stage1", loadingMessage: "Combining the best of each variant…" });
+    try {
+      const result = await post<{ base64: string; mimeType: string }>(
+        "/api/stage1-combine",
+        {
+          screenshotBase64,
+          screenshotMimeType,
+          variants: variants.map((v) => ({ base64: v.base64, mimeType: v.mimeType })),
+          feedback: variantFeedback,
+        }
+      );
+      const compressed = await compressBase64(result.base64, result.mimeType);
       set({
         baseRenderBase64: compressed.base64,
         baseRenderMimeType: compressed.mimeType,
@@ -738,8 +889,19 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed. Please try again.");
+      setError(err instanceof Error ? err.message : "Combination failed. Please try again.");
+      set({ step: "variant-review" });
     }
+  }
+
+  // ── Pick a single variant as the base (skip combine) ──────────────────────
+
+  function handlePickVariant(variant: VariantRender) {
+    set({
+      baseRenderBase64: variant.base64,
+      baseRenderMimeType: variant.mimeType,
+      step: "confirm-base",
+    });
   }
 
   // ── Regenerate base render with feedback ──────────────────────────────────
@@ -818,28 +980,39 @@ export default function Home() {
       error: null,
       loading: true,
       step: "stage3",
-      loadingMessage: `Generating ${count} preview${count > 1 ? "s" : ""}… this takes about a minute.`,
+      loadingMessage: `Previewing surface 1 of ${count}: ${surfacesWithMaterial[0].label}…`,
     });
 
     try {
-      const result = await post<{
-        previews: Array<{ surface: string; base64: string; mimeType: string }>;
-      }>("/api/stage3", {
-        screenshotBase64: state.screenshotBase64,
-        screenshotMimeType: state.screenshotMimeType,
-        baseRenderBase64: state.baseRenderBase64,
-        baseRenderMimeType: state.baseRenderMimeType,
-        surfaces: surfacesWithMaterial.map((s) => ({
-          label: s.label,
-          description: s.description,
-          materialBase64: surfaceMaterials[s.label].base64,
-          materialMimeType: surfaceMaterials[s.label].mimeType,
-        })),
-        scale,
-      });
+      const allPreviews: Array<{ surface: string; base64: string; mimeType: string }> = [];
+
+      for (let i = 0; i < surfacesWithMaterial.length; i++) {
+        const surface = surfacesWithMaterial[i];
+        set({
+          loadingMessage: `Previewing surface ${i + 1} of ${count}: ${surface.label}…`,
+        });
+
+        const result = await post<{
+          previews: Array<{ surface: string; base64: string; mimeType: string }>;
+        }>("/api/stage3", {
+          screenshotBase64: state.screenshotBase64,
+          screenshotMimeType: state.screenshotMimeType,
+          baseRenderBase64: state.baseRenderBase64,
+          baseRenderMimeType: state.baseRenderMimeType,
+          surfaces: [{
+            label: surface.label,
+            description: surface.description,
+            materialBase64: surfaceMaterials[surface.label].base64,
+            materialMimeType: surfaceMaterials[surface.label].mimeType,
+          }],
+          scale,
+        });
+
+        allPreviews.push(...result.previews);
+      }
 
       set({
-        previewImages: result.previews,
+        previewImages: allPreviews,
         step: "review",
         loading: false,
         error: null,
@@ -855,36 +1028,58 @@ export default function Home() {
   async function handleFinalRender() {
     const { surfaces, surfaceMaterials, scale, renderOptions } = state;
     const surfacesWithMaterial = surfaces.filter((s) => surfaceMaterials[s.label]);
+    const count = surfacesWithMaterial.length;
 
     set({
       error: null,
       loading: true,
       step: "stage4",
-      loadingMessage: "Creating your final high-quality render… this takes 1–2 minutes.",
+      loadingMessage: `Describing material 1 of ${count}: ${surfacesWithMaterial[0].label}…`,
     });
 
     try {
-      const result = await post<{ finalBase64: string; finalMimeType: string }>(
-        "/api/stage4",
-        {
-          screenshotBase64: state.screenshotBase64,
-          screenshotMimeType: state.screenshotMimeType,
-          baseRenderBase64: state.baseRenderBase64,
-          baseRenderMimeType: state.baseRenderMimeType,
-          surfaces: surfacesWithMaterial.map((s) => ({
-            label: s.label,
-            description: s.description,
-            materialBase64: surfaceMaterials[s.label].base64,
-            materialMimeType: surfaceMaterials[s.label].mimeType,
-          })),
-          scale,
-          renderOptions,
-        }
-      );
+      let runningBase64 = state.baseRenderBase64;
+      let runningMimeType = state.baseRenderMimeType;
+
+      for (let i = 0; i < surfacesWithMaterial.length; i++) {
+        const surface = surfacesWithMaterial[i];
+        const mat = surfaceMaterials[surface.label];
+
+        // Describe the material first (quick call, separate timeout budget)
+        set({ loadingMessage: `Describing material ${i + 1} of ${count}: ${surface.label}…` });
+        const { description: materialDescription } = await post<{ description: string }>(
+          "/api/describe-stone",
+          { stoneBase64: mat.base64, stoneMimeType: mat.mimeType }
+        );
+
+        // Apply this surface's material on top of the accumulated render
+        set({ loadingMessage: `Rendering surface ${i + 1} of ${count}: ${surface.label}…` });
+        const result = await post<{ base64: string; mimeType: string }>(
+          "/api/stage4",
+          {
+            screenshotBase64: state.screenshotBase64,
+            screenshotMimeType: state.screenshotMimeType,
+            runningBase64,
+            runningMimeType,
+            surface: {
+              label: surface.label,
+              description: surface.description,
+              materialBase64: mat.base64,
+              materialMimeType: mat.mimeType,
+            },
+            materialDescription,
+            scale,
+            renderOptions,
+          }
+        );
+
+        runningBase64 = result.base64;
+        runningMimeType = result.mimeType;
+      }
 
       set({
-        finalBase64: result.finalBase64,
-        finalMimeType: result.finalMimeType,
+        finalBase64: runningBase64,
+        finalMimeType: runningMimeType,
         step: "complete",
         loading: false,
         error: null,
@@ -899,6 +1094,11 @@ export default function Home() {
 
   const { step, loading, loadingMessage, error } = state;
 
+  // Check if project setup is ready to generate
+  const canGenerate =
+    state.screenshotPreviewUrl !== "" &&
+    state.projectName.trim() !== "";
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
@@ -908,9 +1108,16 @@ export default function Home() {
             <div className="w-8 h-8 rounded-lg bg-gold/10 border border-gold/30 flex items-center justify-center">
               <span className="text-gold text-xs font-bold">T</span>
             </div>
-            <span className="font-display text-stone-100 text-lg font-semibold tracking-tight">
-              Render Studio
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="font-display text-stone-100 text-lg font-semibold tracking-tight">
+                Render Studio
+              </span>
+              {state.projectName && (
+                <span className="text-stone-500 text-sm font-normal hidden sm:inline">
+                  — {state.projectName}
+                </span>
+              )}
+            </div>
           </div>
           {step !== "upload" && (
             <StepBar current={step} />
@@ -921,8 +1128,8 @@ export default function Home() {
       {/* Main */}
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-12 space-y-6">
 
-        {/* ── UPLOAD ── */}
-        {step === "upload" && !loading && (
+        {/* ── PROJECT SETUP / UPLOAD ── */}
+        {step === "upload" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="text-center space-y-3">
               <h1 className="font-display text-3xl sm:text-4xl text-stone-100 leading-tight">
@@ -930,32 +1137,129 @@ export default function Home() {
                 <span className="text-gold">photorealistic renders</span>
               </h1>
               <p className="text-stone-400 text-base max-w-lg mx-auto">
-                Upload a SketchUp screenshot and we&apos;ll show you what it looks like
-                with real stone materials applied — in minutes.
+                Set up your project, upload reference images for inspiration,
+                and we&apos;ll generate three render variants automatically.
               </p>
             </div>
 
+            {/* Project name */}
             <div className="card p-6 space-y-4">
               <div>
-                <p className="text-stone-200 font-medium text-sm mb-1">Step 1 of 4</p>
-                <h2 className="text-stone-100 text-xl font-semibold">Upload your SketchUp drawing</h2>
+                <h2 className="text-stone-100 text-xl font-semibold">Project setup</h2>
                 <p className="text-stone-400 text-sm mt-1">
-                  Take a screenshot of your SketchUp model and drop it here.
-                  Any view works — top, perspective, or interior.
+                  Name your project and upload the SketchUp screenshot.
                 </p>
               </div>
-              <DropZone
-                onFile={handleScreenshotUpload}
-                label="Drop your SketchUp screenshot here"
-                sublabel="Or click to browse your files"
-                className="h-56"
+              <div className="space-y-1.5">
+                <label className="text-stone-300 text-sm font-medium">Project name</label>
+                <input
+                  type="text"
+                  value={state.projectName}
+                  onChange={(e) => set({ projectName: e.target.value })}
+                  placeholder="e.g. Candidasa Villa"
+                  className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold/50 focus:border-gold/50 placeholder:text-stone-600"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-stone-300 text-sm font-medium">SketchUp screenshot</label>
+                <DropZone
+                  onFile={async (file) => {
+                    const { base64, mimeType } = await fileToBase64(file);
+                    set({
+                      screenshotBase64: base64,
+                      screenshotMimeType: mimeType,
+                      screenshotPreviewUrl: dataUrl(base64, mimeType),
+                    });
+                  }}
+                  label="Drop your SketchUp screenshot here"
+                  sublabel="Or click to browse your files"
+                  previewUrl={state.screenshotPreviewUrl || undefined}
+                  className="h-48"
+                />
+              </div>
+            </div>
+
+            {/* Reference images */}
+            <div className="card p-6 space-y-4">
+              <div>
+                <h2 className="text-stone-100 text-lg font-semibold">Reference images</h2>
+                <p className="text-stone-400 text-sm mt-1">
+                  Upload renders, photos, or mood board images for inspiration.
+                  Two variant renders will be generated based on these references.
+                </p>
+              </div>
+
+              {/* Uploaded references */}
+              {state.referenceImages.length > 0 && (
+                <div className="space-y-3">
+                  {state.referenceImages.map((ref) => (
+                    <div key={ref.id} className="flex gap-3 p-3 rounded-xl bg-stone-800/50 border border-stone-700">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={ref.previewUrl}
+                        alt="reference"
+                        className="w-20 h-20 rounded-lg object-cover border border-stone-600 flex-shrink-0"
+                      />
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <textarea
+                          value={ref.inspirationNote}
+                          onChange={(e) => updateReferenceNote(ref.id, e.target.value)}
+                          placeholder="What should we draw inspiration from? e.g. 'The warm timber ceiling proportions' or 'The stone wall texture and colour palette'"
+                          className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-100 placeholder-stone-500 resize-none focus:outline-none focus:border-gold/60 transition-colors"
+                          rows={2}
+                        />
+                      </div>
+                      <button
+                        onClick={() => removeReference(ref.id)}
+                        className="text-stone-500 hover:text-red-400 transition-colors flex-shrink-0 self-start p-1"
+                        title="Remove"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <MultiDropZone
+                onFiles={handleAddReferenceImages}
+                label="Add reference images"
+                sublabel="Drop multiple images or click to browse"
+                className="h-28"
               />
             </div>
 
+            {/* Generate button */}
+            <div className="card p-5">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <p className="text-stone-200 font-medium text-sm">Ready to generate?</p>
+                  <p className="text-stone-400 text-xs mt-0.5">
+                    {state.referenceImages.length > 0
+                      ? `3 variants will be generated automatically (standard + 2 inspired). Takes ~3 minutes.`
+                      : `1 standard render will be generated. Add reference images above for 3 variants.`}
+                  </p>
+                </div>
+                <button
+                  className="btn-primary w-full sm:w-auto"
+                  disabled={!canGenerate}
+                  onClick={() => handleStartGeneration()}
+                >
+                  Generate renders
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Feature cards */}
             <div className="grid grid-cols-3 gap-3 text-center">
               {[
                 { icon: "🏗️", label: "Preserves your layout", sub: "Walls, doors & windows stay exactly as drawn" },
-                { icon: "🪨", label: "Real stone textures", sub: "Upload any stone material photo" },
+                { icon: "🎨", label: "3 design variants", sub: "Standard + 2 reference-inspired options" },
                 { icon: "📐", label: "High quality output", sub: "Final render ready to share with clients" },
               ].map((f) => (
                 <div key={f.label} className="card p-4 space-y-1">
@@ -977,15 +1281,79 @@ export default function Home() {
         {error && (
           <ErrorCard
             message={error}
-            onRetry={() => set({ ...EMPTY_STATE })}
+            onRetry={() => set({ ...EMPTY_STATE, projectName: state.projectName, referenceImages: state.referenceImages })}
           />
+        )}
+
+        {/* ── VARIANT REVIEW (3 variants) ── */}
+        {step === "variant-review" && !loading && !error && (
+          <div className="space-y-6 animate-slide-up">
+            <div className="card p-6 space-y-2">
+              <p className="text-stone-400 text-sm">Step 1 of 5 — pick or combine</p>
+              <h2 className="text-stone-100 text-xl font-semibold">Review your render variants</h2>
+              <p className="text-stone-400 text-sm">
+                We generated {state.variants.length} variant{state.variants.length !== 1 ? "s" : ""}.
+                You can pick one directly or describe what to combine from each.
+              </p>
+            </div>
+
+            {/* Variant cards */}
+            <div className="space-y-4">
+              {state.variants.map((variant) => (
+                <div key={variant.label} className="card overflow-hidden">
+                  <div className="px-4 py-3 border-b border-stone-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        variant.label === "standard" ? "bg-stone-400" :
+                        variant.label === "variant-a" ? "bg-gold" : "bg-amber-500"
+                      }`} />
+                      <span className="text-stone-200 text-sm font-medium">{variant.title}</span>
+                    </div>
+                    <button
+                      className="btn-secondary text-xs px-3 py-1.5"
+                      onClick={() => handlePickVariant(variant)}
+                    >
+                      Use this one
+                    </button>
+                  </div>
+                  <RenderImage base64={variant.base64} mimeType={variant.mimeType} />
+                </div>
+              ))}
+            </div>
+
+            {/* Combination feedback */}
+            {state.variants.length > 1 && (
+              <div className="card p-5 space-y-3">
+                <div>
+                  <h3 className="text-stone-200 font-medium text-sm">Combine the best of each</h3>
+                  <p className="text-stone-500 text-xs mt-0.5">
+                    Describe what you like from each variant and we&apos;ll merge them into one render.
+                  </p>
+                </div>
+                <textarea
+                  className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2.5 text-sm text-stone-100 placeholder-stone-500 resize-none focus:outline-none focus:border-gold/60 transition-colors"
+                  rows={4}
+                  placeholder="e.g. I like the wall proportions from Variant A, the floor material from Standard, and the ceiling warmth from Variant B…"
+                  value={state.variantFeedback}
+                  onChange={(e) => set({ variantFeedback: e.target.value })}
+                />
+                <button
+                  className="btn-primary w-full"
+                  disabled={!state.variantFeedback.trim()}
+                  onClick={handleCombineVariants}
+                >
+                  Combine into final base render
+                </button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── CONFIRM BASE RENDER ── */}
         {step === "confirm-base" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 1 of 5</p>
+              <p className="text-stone-400 text-sm">Step 2 of 5</p>
               <h2 className="text-stone-100 text-xl font-semibold">Does the layout look right?</h2>
               <p className="text-stone-400 text-sm">
                 Check that the walls, doors, windows, and furniture positions match your drawing.
@@ -1031,6 +1399,14 @@ export default function Home() {
                 onChange={(e) => set({ baseRenderFeedback: e.target.value })}
               />
               <div className="flex flex-col sm:flex-row gap-3">
+                {state.variants.length > 1 && (
+                  <button
+                    className="btn-secondary"
+                    onClick={() => set({ step: "variant-review" })}
+                  >
+                    ← Back to variants
+                  </button>
+                )}
                 <button
                   className="btn-secondary"
                   disabled={!state.baseRenderFeedback.trim()}
@@ -1056,7 +1432,7 @@ export default function Home() {
         {(step === "surfaces" || step === "configure") && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 2 of 4</p>
+              <p className="text-stone-400 text-sm">Step 3 of 5</p>
               <h2 className="text-stone-100 text-xl font-semibold">Choose materials for each surface</h2>
               <p className="text-stone-400 text-sm">
                 We found {state.surfaces.length} surface{state.surfaces.length !== 1 ? "s" : ""} in your space.
@@ -1095,7 +1471,7 @@ export default function Home() {
                             </div>
                             <ChangeFileButton
                               onFile={async (file) => {
-                                const { base64, mimeType } = await fileToBase64(file);
+                                const { base64, mimeType } = await materialFileToBase64(file);
                                 set({
                                   surfaceMaterials: {
                                     ...state.surfaceMaterials,
@@ -1109,7 +1485,7 @@ export default function Home() {
                           /* No material yet — compact inline upload button */
                           <SurfaceUploadButton
                             onFile={async (file) => {
-                              const { base64, mimeType } = await fileToBase64(file);
+                              const { base64, mimeType } = await materialFileToBase64(file);
                               set({
                                 surfaceMaterials: {
                                   ...state.surfaceMaterials,
@@ -1151,7 +1527,7 @@ export default function Home() {
         {step === "review" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 3 of 4 — almost there!</p>
+              <p className="text-stone-400 text-sm">Step 4 of 5 — almost there!</p>
               <h2 className="text-stone-100 text-xl font-semibold">Here&apos;s a preview</h2>
               <p className="text-stone-400 text-sm">
                 These are quick previews — the final render will be significantly higher quality.
@@ -1206,7 +1582,7 @@ export default function Home() {
         {step === "render-options" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 4 of 5 — almost there!</p>
+              <p className="text-stone-400 text-sm">Step 5 of 5 — almost there!</p>
               <h2 className="text-stone-100 text-xl font-semibold">Render options</h2>
               <p className="text-stone-400 text-sm">
                 Fine-tune the lighting, mood, and atmosphere of your final render.
@@ -1348,7 +1724,7 @@ export default function Home() {
                   downloadImage(
                     state.finalBase64,
                     state.finalMimeType,
-                    `tiba-render-${Date.now()}.png`
+                    `${state.projectName ? state.projectName.replace(/\s+/g, "-").toLowerCase() : "tiba"}-render-${Date.now()}.png`
                   )
                 }
               >
@@ -1362,7 +1738,7 @@ export default function Home() {
                 className="btn-secondary"
                 onClick={() => setState(EMPTY_STATE)}
               >
-                Start a new render
+                Start a new project
               </button>
             </div>
           </div>

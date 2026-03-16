@@ -1,7 +1,8 @@
 export type AppStep =
   | "upload"
-  | "stage1"           // generating base render
-  | "confirm-base"     // user confirms base render looks spatially correct
+  | "stage1"           // generating variants (auto-chains all 3)
+  | "variant-review"   // user reviews 3 variants and writes combination notes
+  | "confirm-base"     // user confirms combined base render looks spatially correct
   | "surfaces"         // user reviews surfaces
   | "configure"        // user picks stone + scale
   | "stage3"           // generating previews
@@ -40,18 +41,41 @@ export interface SurfaceMaterial {
   previewUrl: string;
 }
 
+export interface ReferenceImage {
+  id: string;           // unique id for keying
+  base64: string;
+  mimeType: string;
+  previewUrl: string;
+  inspirationNote: string; // what to draw inspiration from in this image
+}
+
+export interface VariantRender {
+  label: string;        // "standard" | "variant-a" | "variant-b"
+  title: string;        // display name
+  base64: string;
+  mimeType: string;
+}
+
 export interface AppState {
   step: AppStep;
+
+  // Project
+  projectName: string;
+  referenceImages: ReferenceImage[];
 
   // Screenshot the user uploaded
   screenshotBase64: string;
   screenshotMimeType: string;
   screenshotPreviewUrl: string;
 
-  // Output of Stage 1
+  // Output of Stage 1 — three variants
+  variants: VariantRender[];
+
+  // Output of Stage 1 — combined/chosen base render
   baseRenderBase64: string;
   baseRenderMimeType: string;
   baseRenderFeedback: string; // user's correction notes for regeneration
+  variantFeedback: string;    // what to keep/combine from each variant
 
   // Output of Stage 2 (surface detection)
   surfaces: Surface[];
@@ -81,12 +105,16 @@ export interface AppState {
 
 export const EMPTY_STATE: AppState = {
   step: "upload",
+  projectName: "",
+  referenceImages: [],
   screenshotBase64: "",
   screenshotMimeType: "image/png",
   screenshotPreviewUrl: "",
+  variants: [],
   baseRenderBase64: "",
   baseRenderMimeType: "image/png",
   baseRenderFeedback: "",
+  variantFeedback: "",
   surfaces: [],
   selectedSurfaces: [],
   surfaceMaterials: {},

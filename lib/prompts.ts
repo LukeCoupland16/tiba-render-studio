@@ -7,11 +7,8 @@ import type { RenderOptions } from "@/lib/types";
 export const STRUCTURE_INSTRUCTION = `CRITICAL STRUCTURE INSTRUCTION: The architectural space in this render MUST be structurally identical to the reference SketchUp screenshot. Preserve the exact position of every wall, opening, ceiling, floor plane, and furniture element. Do not add, remove, or relocate any architectural element. Treat the SketchUp geometry as non-negotiable spatial boundaries. You are only permitted to apply photorealistic materials, textures, and lighting within the existing structure — not to alter it.`;
 
 export const STYLE_BLOCK = `Aesthetic requirements:
-- Luminous directional natural light from existing window openings
-- Warm neutrals as architectural base; stone carries visual character
 - Wide dynamic range, 24–35mm prime lens feel, filmic white balance
-- Photorealistic — not CGI, not 3D visualization
-- Rich stone micro-contrast, polished high-gloss finish where appropriate`;
+- Photorealistic — not CGI, not 3D visualization`;
 
 // ── Stage 1: Convert SketchUp screenshot → photorealistic base render ─────────
 export function stage1Prompt(feedback?: string): string {
@@ -120,17 +117,15 @@ function buildRenderOptionsBlock(opts: RenderOptions): string {
 - Camera style: ${CAMERA_LABELS[opts.cameraStyle] ?? opts.cameraStyle}${locationLine}`;
 }
 
-// ── Stage 4: Final high-quality composite bake ────────────────────────────────
-export function stage4Prompt(
-  surfaceList: Array<{ label: string; description: string }>,
+// ── Stage 4: Sequential per-surface bake — one material per call ─────────────
+// Each call applies ONE surface's material on top of the accumulated render state.
+export function stage4SurfaceStepPrompt(
+  surfaceLabel: string,
+  surfaceDescription: string,
   materialDescription: string,
   scaleModifier: string,
   renderOptions?: RenderOptions
 ): string {
-  const surfaces = surfaceList
-    .map((s) => `  - ${s.label}: ${s.description}`)
-    .join("\n");
-
   const optionsBlock = renderOptions
     ? `\n${buildRenderOptionsBlock(renderOptions)}\n`
     : "";
@@ -139,18 +134,69 @@ export function stage4Prompt(
 
 You are viewing three reference images:
 1. The original SketchUp architectural screenshot — this is the spatial blueprint. Do NOT alter any geometry.
-2. A photorealistic base render of the same space — use for lighting, scene, and atmosphere reference.
-3. The material sample photo — this is the material to apply.
+2. The current render state — preserve all existing materials and surfaces exactly as shown.
+3. A material sample photo — apply this material to the target surface only.
 
-Task: Generate the final, maximum-quality photorealistic render applying the material to ALL of these surfaces simultaneously:
-${surfaces}
+Task: Apply the material from image 3 ONLY to the ${surfaceLabel} surface (${surfaceDescription}). All other surfaces must remain exactly as shown in image 2.
 
 Material: ${materialDescription}
 Pattern/texture scale: ${scaleModifier}
-${optionsBlock}
+${optionsBlock}${STYLE_BLOCK}
+
+Push quality to the maximum. Reproduce the material faithfully — match its colour, texture, finish, and scale exactly as it appears in the reference photo.`;
+}
+
+// ── Stage 1 Variant: Inspired by reference images ────────────────────────────
+// referenceNotes: array of { note } for each reference image supplied
+export function stage1VariantPrompt(
+  referenceNotes: Array<{ note: string }>,
+  variantLabel: "A" | "B"
+): string {
+  const notesBlock = referenceNotes
+    .map((r, i) => `  Reference image ${i + 1}: Draw inspiration from — "${r.note}"`)
+    .join("\n");
+
+  const variantDirection =
+    variantLabel === "A"
+      ? "Focus on proportions, spatial rhythm, and material palette from the reference images. Lean toward a faithful interpretation of the reference style."
+      : "Take a more creative interpretation — use the reference images as a loose starting point but push the design further with bolder material choices, contrast, or atmosphere.";
+
+  return `${STRUCTURE_INSTRUCTION}
+
+You are viewing multiple images:
+1. The first image is the original SketchUp architectural screenshot — this is the spatial blueprint. Do NOT alter any geometry.
+2. The remaining images are reference renders/photos for design inspiration.
+
+Task: Convert the SketchUp screenshot into a photorealistic interior render. Use the reference images for inspiration on proportions, form, material choices, colour palette, and overall style — but preserve the exact architectural geometry from the SketchUp model.
+
+Inspiration notes for each reference:
+${notesBlock}
+
+Variant direction: ${variantDirection}
+
 ${STYLE_BLOCK}
 
-This is the final deliverable — push quality to the maximum. Reproduce the material faithfully on every listed surface — match its colour, texture, finish, and scale exactly as it appears in the reference photo.`;
+Maintain all spatial relationships exactly as shown in the SketchUp model. Apply photorealistic materials inspired by the references — not identical copies, but clearly drawing from their character and mood.`;
+}
+
+// ── Stage 1 Combine: Merge best elements from variants ───────────────────────
+export function stage1CombinePrompt(feedback: string): string {
+  return `${STRUCTURE_INSTRUCTION}
+
+You are viewing multiple images:
+1. The original SketchUp architectural screenshot — this is the spatial blueprint. Do NOT alter any geometry.
+2. Variant "Standard" — a clean neutral base render.
+3. Variant "A" — a reference-inspired render.
+4. Variant "B" — a second reference-inspired render.
+
+Task: Generate a final combined base render that takes the best elements from each variant based on the user's feedback below. The result should be a cohesive, photorealistic interior render that preserves the exact SketchUp geometry.
+
+User's combination instructions:
+"${feedback.trim()}"
+
+${STYLE_BLOCK}
+
+Merge the specified elements seamlessly — unified lighting, consistent material transitions, and a single cohesive atmosphere. This combined render will be the base for subsequent material application.`;
 }
 
 // ── Scale modifier lookup ─────────────────────────────────────────────────────

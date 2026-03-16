@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const result = await generateImage(
       stage1Prompt(feedback),
       [{ data: screenshotBase64, mimeType: screenshotMimeType }],
-      false // use fast model for base render
+      true // use pro model for base render
     );
 
     return NextResponse.json({

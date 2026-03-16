@@ -42,7 +42,7 @@ export async function generateImage(
     contents: [{ role: "user", parts }],
     generationConfig: {
       responseModalities: ["TEXT", "IMAGE"],
-      temperature: 1,
+      temperature: 0.5,
       topP: 0.95,
     },
   };
