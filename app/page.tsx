@@ -8,35 +8,44 @@ import { EMPTY_STATE } from "@/lib/types";
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Resize + compress an image file to stay under Vercel's 4.5MB body limit.
-// Max dimension 1920px, JPEG at 85% quality.
+// Resize + compress a raw image src string (data URL or object URL) to max 1920px JPEG 85%.
+function compressImageSrc(src: string): Promise<{ base64: string; mimeType: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onerror = reject;
+    img.onload = () => {
+      const MAX = 1920;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+        else { width = Math.round(width * MAX / height); height = MAX; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      resolve({ base64: dataUrl.split(",")[1], mimeType: "image/jpeg" });
+    };
+    img.src = src;
+  });
+}
+
+// Compress a File upload before sending to the API.
 function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
     reader.onload = () => {
-      const img = new Image();
-      img.onerror = reject;
-      img.onload = () => {
-        const MAX = 1920;
-        let { width, height } = img;
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
-          else { width = Math.round(width * MAX / height); height = MAX; }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d")!;
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-        const base64 = dataUrl.split(",")[1];
-        resolve({ base64, mimeType: "image/jpeg" });
-      };
-      img.src = reader.result as string;
+      compressImageSrc(reader.result as string).then(resolve).catch(reject);
     };
     reader.readAsDataURL(file);
   });
+}
+
+// Compress a base64 image returned from the API before storing in state.
+function compressBase64(base64: string, mimeType: string): Promise<{ base64: string; mimeType: string }> {
+  return compressImageSrc(`data:${mimeType};base64,${base64}`);
 }
 
 function dataUrl(base64: string, mimeType: string) {
@@ -683,10 +692,17 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    const json = await res.json() as T & { error?: string };
-    if (!res.ok || json.error) {
-      throw new Error((json as { error?: string }).error ?? `Request failed (${res.status})`);
+    if (!res.ok) {
+      // Handle plain-text error responses (e.g. Vercel 413 "Request Entity Too Large")
+      const text = await res.text();
+      let msg: string;
+      try { msg = (JSON.parse(text) as { error?: string }).error ?? text; }
+      catch { msg = text; }
+      if (res.status === 413) throw new Error("Image too large to process. Try a smaller or lower-resolution file.");
+      throw new Error(msg || `Request failed (${res.status})`);
     }
+    const json = await res.json() as T & { error?: string };
+    if (json.error) throw new Error(json.error);
     return json;
   }
 
@@ -711,9 +727,12 @@ export default function Home() {
         { screenshotBase64: base64, screenshotMimeType: mimeType }
       );
 
+      // Compress the returned base render before storing — it gets re-sent in stages 2/3/4
+      const compressed = await compressBase64(result.baseRenderBase64, result.baseRenderMimeType);
+
       set({
-        baseRenderBase64: result.baseRenderBase64,
-        baseRenderMimeType: result.baseRenderMimeType,
+        baseRenderBase64: compressed.base64,
+        baseRenderMimeType: compressed.mimeType,
         step: "confirm-base",
         loading: false,
         error: null,
@@ -733,9 +752,10 @@ export default function Home() {
         "/api/stage1",
         { screenshotBase64, screenshotMimeType, feedback: baseRenderFeedback }
       );
+      const compressed = await compressBase64(result.baseRenderBase64, result.baseRenderMimeType);
       set({
-        baseRenderBase64: result.baseRenderBase64,
-        baseRenderMimeType: result.baseRenderMimeType,
+        baseRenderBase64: compressed.base64,
+        baseRenderMimeType: compressed.mimeType,
         baseRenderFeedback: "",
         step: "confirm-base",
         loading: false,
