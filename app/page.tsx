@@ -8,17 +8,33 @@ import { EMPTY_STATE } from "@/lib/types";
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Resize + compress an image file to stay under Vercel's 4.5MB body limit.
+// Max dimension 1920px, JPEG at 85% quality.
 function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // result is "data:image/png;base64,XXXX" — strip the prefix
-      const [header, data] = result.split(",");
-      const mimeType = header.split(":")[1].split(";")[0];
-      resolve({ base64: data, mimeType });
-    };
     reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const MAX = 1920;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
+          else { width = Math.round(width * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d")!;
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+        const base64 = dataUrl.split(",")[1];
+        resolve({ base64, mimeType: "image/jpeg" });
+      };
+      img.src = reader.result as string;
+    };
     reader.readAsDataURL(file);
   });
 }
