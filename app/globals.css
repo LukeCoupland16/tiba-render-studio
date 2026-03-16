@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  :root {
+    --gold: #c8a96e;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1a1917;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #3d3b37;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #5a5751;
+  }
+}
+
+@layer components {
+  /* Gold highlight text */
+  .text-gold {
+    color: var(--gold);
+  }
+
+  /* Card surface */
+  .card {
+    @apply bg-stone-900 border border-stone-800 rounded-2xl;
+  }
+
+  /* Primary action button */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl
+           bg-gold text-stone-950 font-semibold text-sm
+           hover:bg-gold-light active:bg-gold-dark
+           transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  /* Secondary button */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl
+           border border-stone-700 text-stone-300 font-medium text-sm
+           hover:border-stone-500 hover:text-stone-100
+           transition-all duration-150
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+
+  /* Drop zone */
+  .drop-zone {
+    @apply relative border-2 border-dashed border-stone-700 rounded-xl
+           flex flex-col items-center justify-center
+           transition-all duration-200 cursor-pointer
+           hover:border-gold hover:bg-stone-800/50;
+  }
+  .drop-zone.dragging {
+    @apply border-gold bg-stone-800/70;
+  }
+
+  /* Stage badge */
+  .stage-badge {
+    @apply inline-flex items-center justify-center w-7 h-7 rounded-full
+           text-xs font-bold;
+  }
+
+  /* Spinner */
+  .spinner {
+    @apply w-6 h-6 border-2 border-stone-700 border-t-gold rounded-full animate-spin;
+  }
+}
+
+/* Pulse animation for loading ring */
+@keyframes ping-slow {
+  75%, 100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+.animate-ping-slow {
+  animation: ping-slow 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
