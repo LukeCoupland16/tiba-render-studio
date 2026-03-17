@@ -3,6 +3,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import type { AppState, AppStep, Surface, SurfaceMaterial, RenderOptions, ReferenceImage, VariantRender } from "@/lib/types";
 import { EMPTY_STATE } from "@/lib/types";
+import { t, type Lang } from "@/lib/i18n";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -44,7 +45,6 @@ function fileToBase64(file: File): Promise<{ base64: string; mimeType: string }>
 }
 
 // Read a material photo file as-is — no JPEG compression, preserves original format.
-// Used for material uploads so texture fidelity is not degraded by lossy compression.
 function materialFileToBase64(file: File): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -83,6 +83,44 @@ function nextRefId() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Language picker popup
+// ─────────────────────────────────────────────────────────────────────────────
+
+function LanguagePicker({ onSelect }: { onSelect: (lang: Lang) => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/90 backdrop-blur-sm animate-fade-in">
+      <div className="card p-8 max-w-sm w-full mx-4 space-y-6 text-center">
+        <div>
+          <div className="w-12 h-12 rounded-lg bg-gold/10 border border-gold/30 flex items-center justify-center mx-auto mb-4">
+            <span className="text-gold text-lg font-bold">T</span>
+          </div>
+          <h2 className="text-stone-100 text-xl font-semibold font-display">
+            Choose your language
+          </h2>
+          <p className="text-stone-400 text-sm mt-1">Scegli la tua lingua</p>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => onSelect("en")}
+            className="p-4 rounded-xl border border-stone-700 bg-stone-900 hover:border-gold/60 hover:bg-gold/5 transition-all text-center group"
+          >
+            <span className="text-2xl block mb-2">🇬🇧</span>
+            <span className="text-stone-100 font-medium text-sm group-hover:text-gold transition-colors">English</span>
+          </button>
+          <button
+            onClick={() => onSelect("it")}
+            className="p-4 rounded-xl border border-stone-700 bg-stone-900 hover:border-gold/60 hover:bg-gold/5 transition-all text-center group"
+          >
+            <span className="text-2xl block mb-2">🇮🇹</span>
+            <span className="text-stone-100 font-medium text-sm group-hover:text-gold transition-colors">Italiano</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Step indicator
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -100,7 +138,7 @@ const STEP_ORDER: AppStep[] = [
   "complete",
 ];
 
-const STEP_LABELS: Record<AppStep, string> = {
+const STEP_LABELS_EN: Record<AppStep, string> = {
   upload: "Setup",
   stage1: "Render",
   "variant-review": "Variants",
@@ -114,8 +152,23 @@ const STEP_LABELS: Record<AppStep, string> = {
   complete: "Done",
 };
 
-function StepBar({ current }: { current: AppStep }) {
+const STEP_LABELS_IT: Record<AppStep, string> = {
+  upload: "Setup",
+  stage1: "Render",
+  "variant-review": "Varianti",
+  "confirm-base": "Conferma",
+  surfaces: "Superfici",
+  configure: "Pietra",
+  stage3: "Anteprima",
+  review: "Revisione",
+  "render-options": "Opzioni",
+  stage4: "Finale",
+  complete: "Fatto",
+};
+
+function StepBar({ current, lang }: { current: AppStep; lang: Lang }) {
   const idx = STEP_ORDER.indexOf(current);
+  const labels = lang === "it" ? STEP_LABELS_IT : STEP_LABELS_EN;
   const visible = ["upload", "variant-review", "confirm-base", "configure", "review", "render-options", "complete"] as AppStep[];
   return (
     <div className="flex items-center gap-1 sm:gap-2">
@@ -141,7 +194,7 @@ function StepBar({ current }: { current: AppStep }) {
                 active ? "text-stone-200" : done ? "text-gold/70" : "text-stone-600"
               }`}
             >
-              {STEP_LABELS[step]}
+              {labels[step]}
             </span>
             {i < visible.length - 1 && (
               <div
@@ -156,7 +209,7 @@ function StepBar({ current }: { current: AppStep }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Surface crop — draws a bounding-box region from the base render onto a canvas
+// Surface crop
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SurfaceCrop({
@@ -166,7 +219,7 @@ function SurfaceCrop({
 }: {
   imageBase64: string;
   imageMimeType: string;
-  box: [number, number, number, number]; // [y_min, x_min, y_max, x_max] 0–1000
+  box: [number, number, number, number];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -184,7 +237,6 @@ function SurfaceCrop({
       const sw = ((x2 - x1) / 1000) * img.naturalWidth;
       const sh = ((y2 - y1) / 1000) * img.naturalHeight;
 
-      // Cap output at 320×240 while preserving aspect ratio
       const maxW = 320;
       const maxH = 240;
       const scale = Math.min(maxW / sw, maxH / sh);
@@ -215,6 +267,7 @@ function DropZone({
   sublabel,
   previewUrl,
   className = "",
+  lang,
 }: {
   onFile: (file: File) => void;
   accept?: string;
@@ -222,6 +275,7 @@ function DropZone({
   sublabel?: string;
   previewUrl?: string;
   className?: string;
+  lang: Lang;
 }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -260,7 +314,7 @@ function DropZone({
             className="w-full h-full object-contain rounded-lg"
           />
           <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/50 rounded-lg transition-opacity">
-            <span className="text-sm text-white font-medium">Click to change</span>
+            <span className="text-sm text-white font-medium">{t("misc.clickToChange", lang)}</span>
           </div>
         </div>
       ) : (
@@ -275,7 +329,7 @@ function DropZone({
             <p className="text-stone-200 font-medium text-sm">{label}</p>
             {sublabel && <p className="text-stone-500 text-xs mt-1">{sublabel}</p>}
           </div>
-          <span className="text-xs text-stone-600 mt-1">PNG, JPG, WEBP accepted</span>
+          <span className="text-xs text-stone-600 mt-1">{t("upload.accepted", lang)}</span>
         </div>
       )}
     </div>
@@ -344,8 +398,8 @@ function MultiDropZone({
   );
 }
 
-// Small "Change" button for replacing an already-uploaded file
-function ChangeFileButton({ onFile }: { onFile: (file: File) => void }) {
+// Small "Change" button
+function ChangeFileButton({ onFile, lang }: { onFile: (file: File) => void; lang: Lang }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -360,14 +414,14 @@ function ChangeFileButton({ onFile }: { onFile: (file: File) => void }) {
         onClick={() => inputRef.current?.click()}
         className="btn-secondary text-xs px-3 py-1.5 flex-shrink-0"
       >
-        Change
+        {t("config.change", lang)}
       </button>
     </>
   );
 }
 
-// Compact inline upload button for surface cards (no DropZone overflow issues)
-function SurfaceUploadButton({ onFile }: { onFile: (file: File) => void }) {
+// Compact inline upload button for surface cards
+function SurfaceUploadButton({ onFile, lang }: { onFile: (file: File) => void; lang: Lang }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -392,9 +446,9 @@ function SurfaceUploadButton({ onFile }: { onFile: (file: File) => void }) {
         </div>
         <div className="min-w-0">
           <p className="text-stone-300 text-xs font-medium group-hover:text-stone-100 transition-colors">
-            Upload material photo
+            {t("config.uploadMat", lang)}
           </p>
-          <p className="text-stone-600 text-xs">PNG, JPG, WEBP — product shot, swatch, screenshot</p>
+          <p className="text-stone-600 text-xs">{t("config.uploadMatSub", lang)}</p>
         </div>
       </button>
     </>
@@ -405,7 +459,7 @@ function SurfaceUploadButton({ onFile }: { onFile: (file: File) => void }) {
 // Loading overlay
 // ─────────────────────────────────────────────────────────────────────────────
 
-function LoadingCard({ message }: { message: string }) {
+function LoadingCard({ message, lang }: { message: string; lang: Lang }) {
   return (
     <div className="card p-10 flex flex-col items-center gap-6 animate-fade-in">
       <div className="relative">
@@ -414,7 +468,7 @@ function LoadingCard({ message }: { message: string }) {
       </div>
       <div className="text-center">
         <p className="text-stone-200 font-medium">{message}</p>
-        <p className="text-stone-500 text-sm mt-1">This may take up to a minute — please don&apos;t close the tab.</p>
+        <p className="text-stone-500 text-sm mt-1">{t("loading.wait", lang)}</p>
       </div>
     </div>
   );
@@ -424,7 +478,7 @@ function LoadingCard({ message }: { message: string }) {
 // Error card
 // ─────────────────────────────────────────────────────────────────────────────
 
-function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorCard({ message, onRetry, lang }: { message: string; onRetry: () => void; lang: Lang }) {
   return (
     <div className="card border-red-900/50 p-8 flex flex-col items-center gap-4 text-center animate-fade-in">
       <div className="w-12 h-12 rounded-full bg-red-900/30 flex items-center justify-center">
@@ -434,18 +488,18 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
         </svg>
       </div>
       <div>
-        <p className="text-stone-200 font-medium">Something went wrong</p>
+        <p className="text-stone-200 font-medium">{t("error.title", lang)}</p>
         <p className="text-stone-400 text-sm mt-1">{message}</p>
       </div>
       <button onClick={onRetry} className="btn-secondary text-sm">
-        Try again
+        {t("error.retry", lang)}
       </button>
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Surface selector
+// Surface helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SURFACE_FRIENDLY_NAMES: Record<string, string> = {
@@ -480,38 +534,23 @@ function friendlyName(label: string) {
 // Scale picker
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SCALE_OPTIONS = [
-  {
-    value: "small" as const,
-    label: "Fine & detailed",
-    sublabel: "Small repeating tiles — great for bathrooms and backsplashes",
-    icon: "▪▪▪\n▪▪▪\n▪▪▪",
-  },
-  {
-    value: "medium" as const,
-    label: "Natural slab",
-    sublabel: "Medium stone slabs — the most natural and versatile look",
-    icon: "▬\n▬",
-    recommended: true,
-  },
-  {
-    value: "large" as const,
-    label: "Statement walls",
-    sublabel: "Large dramatic slabs — bold, floor-to-ceiling impact",
-    icon: "█",
-  },
-];
-
 function ScalePicker({
   value,
   onChange,
+  lang,
 }: {
   value: "small" | "medium" | "large";
   onChange: (v: "small" | "medium" | "large") => void;
+  lang: Lang;
 }) {
+  const options = [
+    { value: "small" as const, label: t("scale.fine", lang), sublabel: t("scale.fineSub", lang) },
+    { value: "medium" as const, label: t("scale.natural", lang), sublabel: t("scale.naturalSub", lang), recommended: true },
+    { value: "large" as const, label: t("scale.statement", lang), sublabel: t("scale.statementSub", lang) },
+  ];
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      {SCALE_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
@@ -523,7 +562,7 @@ function ScalePicker({
         >
           {opt.recommended && (
             <span className="absolute top-2 right-2 text-xs bg-gold/20 text-gold px-2 py-0.5 rounded-full font-medium">
-              Recommended
+              {t("scale.recommended", lang)}
             </span>
           )}
           <div
@@ -585,9 +624,11 @@ interface NominatimResult {
 function LocationSearch({
   value,
   onChange,
+  lang,
 }: {
   value: string;
   onChange: (name: string) => void;
+  lang: Lang;
 }) {
   const [query, setQuery] = useState(value);
   const [results, setResults] = useState<NominatimResult[]>([]);
@@ -595,7 +636,6 @@ function LocationSearch({
   const [mapPin, setMapPin] = useState<{ lat: number; lon: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // When a location is already set on mount, geocode it to show the map
   useEffect(() => {
     if (value && !mapPin) {
       fetch(
@@ -630,7 +670,6 @@ function LocationSearch({
   }
 
   function selectResult(r: NominatimResult) {
-    // Use a short readable name (first two comma-separated parts)
     const shortName = r.display_name.split(",").slice(0, 2).join(",").trim();
     setQuery(shortName);
     setMapPin({ lat: parseFloat(r.lat), lon: parseFloat(r.lon) });
@@ -651,8 +690,10 @@ function LocationSearch({
 
   return (
     <div className="space-y-2">
-      <label className="text-stone-300 text-sm font-medium">Location <span className="text-stone-500 font-normal">(optional)</span></label>
-      <p className="text-stone-500 text-xs">Sets the regional light quality, landscape, and exterior context visible through windows.</p>
+      <label className="text-stone-300 text-sm font-medium">
+        {t("options.location", lang)} <span className="text-stone-500 font-normal">{t("options.locationOptional", lang)}</span>
+      </label>
+      <p className="text-stone-500 text-xs">{t("options.locationSub", lang)}</p>
       <div className="relative">
         <input
           type="text"
@@ -660,7 +701,7 @@ function LocationSearch({
           onChange={(e) => handleInput(e.target.value)}
           onFocus={() => results.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Search for a city or region…"
+          placeholder={t("options.locationPlaceholder", lang)}
           className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-sm rounded-lg px-3 py-2.5 pr-8 focus:outline-none focus:ring-1 focus:ring-gold/50 focus:border-gold/50 placeholder:text-stone-600"
         />
         {query && (
@@ -705,9 +746,13 @@ function LocationSearch({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Home() {
+  const [lang, setLang] = useState<Lang | null>(null);
   const [state, setState] = useState<AppState>(EMPTY_STATE);
 
   // ── helpers ────────────────────────────────────────────────────────────────
+
+  // Safe lang accessor (defaults to "en" before selection, but won't render main UI until selected)
+  const L = lang ?? "en";
 
   function set(patch: Partial<AppState>) {
     setState((prev) => ({ ...prev, ...patch }));
@@ -724,12 +769,11 @@ export default function Home() {
       body: JSON.stringify(body),
     });
     if (!res.ok) {
-      // Handle plain-text error responses (e.g. Vercel 413 "Request Entity Too Large")
       const text = await res.text();
       let msg: string;
       try { msg = (JSON.parse(text) as { error?: string }).error ?? text; }
       catch { msg = text; }
-      if (res.status === 413) throw new Error("Image too large to process. Try a smaller or lower-resolution file.");
+      if (res.status === 413) throw new Error(t("error.tooLarge", L));
       throw new Error(msg || `Request failed (${res.status})`);
     }
     const json = await res.json() as T & { error?: string };
@@ -767,14 +811,13 @@ export default function Home() {
   }
 
   // ── Stage 1 V2: Generate 3 variants automatically ─────────────────────────
-  // Auto-chains: standard → variant A → variant B — no user interaction needed
 
   async function handleStartGeneration() {
     const base64 = state.screenshotBase64;
     const mimeType = state.screenshotMimeType;
 
     if (!base64) {
-      setError("Please upload a SketchUp screenshot first.");
+      setError(t("error.uploadFirst", L));
       return;
     }
 
@@ -787,7 +830,7 @@ export default function Home() {
       const totalCount = hasRefs ? 3 : 1;
 
       // 1. Standard base render
-      set({ loadingMessage: `Generating standard render (1/${totalCount})… You can leave your laptop.` });
+      set({ loadingMessage: t("loading.standard", L).replace("{n}", "1").replace("{t}", String(totalCount)) });
       const stdResult = await post<{ baseRenderBase64: string; baseRenderMimeType: string }>(
         "/api/stage1",
         { screenshotBase64: base64, screenshotMimeType: mimeType }
@@ -803,7 +846,7 @@ export default function Home() {
 
       if (hasRefs) {
         // 2. Variant A — reference-inspired (faithful)
-        set({ loadingMessage: "Generating Variant A — reference-inspired (2/3)…" });
+        set({ loadingMessage: t("loading.variantA", L).replace("{n}", "2").replace("{t}", "3") });
         const varAResult = await post<{ base64: string; mimeType: string }>(
           "/api/stage1-variant",
           {
@@ -820,14 +863,14 @@ export default function Home() {
         const varACompressed = await compressBase64(varAResult.base64, varAResult.mimeType);
         variants.push({
           label: "variant-a",
-          title: "Variant A — Faithful",
+          title: L === "it" ? "Variante A — Fedele" : "Variant A — Faithful",
           base64: varACompressed.base64,
           mimeType: varACompressed.mimeType,
         });
         set({ variants: [...variants] });
 
         // 3. Variant B — reference-inspired (creative)
-        set({ loadingMessage: "Generating Variant B — creative interpretation (3/3)…" });
+        set({ loadingMessage: t("loading.variantB", L).replace("{n}", "3").replace("{t}", "3") });
         const varBResult = await post<{ base64: string; mimeType: string }>(
           "/api/stage1-variant",
           {
@@ -844,7 +887,7 @@ export default function Home() {
         const varBCompressed = await compressBase64(varBResult.base64, varBResult.mimeType);
         variants.push({
           label: "variant-b",
-          title: "Variant B — Creative",
+          title: L === "it" ? "Variante B — Creativa" : "Variant B — Creative",
           base64: varBCompressed.base64,
           mimeType: varBCompressed.mimeType,
         });
@@ -860,7 +903,7 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Generation failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("error.genFailed", L));
     }
   }
 
@@ -869,7 +912,7 @@ export default function Home() {
   async function handleCombineVariants() {
     const { screenshotBase64, screenshotMimeType, variants, variantFeedback } = state;
 
-    set({ error: null, loading: true, step: "stage1", loadingMessage: "Combining the best of each variant…" });
+    set({ error: null, loading: true, step: "stage1", loadingMessage: t("loading.combining", L) });
     try {
       const result = await post<{ base64: string; mimeType: string }>(
         "/api/stage1-combine",
@@ -889,12 +932,12 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Combination failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("error.combineFailed", L));
       set({ step: "variant-review" });
     }
   }
 
-  // ── Pick a single variant as the base (skip combine) ──────────────────────
+  // ── Pick a single variant as the base ─────────────────────────────────────
 
   function handlePickVariant(variant: VariantRender) {
     set({
@@ -908,7 +951,7 @@ export default function Home() {
 
   async function handleRegenerateBase() {
     const { screenshotBase64, screenshotMimeType, baseRenderFeedback } = state;
-    set({ error: null, loading: true, step: "stage1", loadingMessage: "Regenerating with your notes…" });
+    set({ error: null, loading: true, step: "stage1", loadingMessage: t("loading.regenerating", L) });
     try {
       const result = await post<{ baseRenderBase64: string; baseRenderMimeType: string }>(
         "/api/stage1",
@@ -924,15 +967,15 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Regeneration failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("error.regenFailed", L));
       set({ step: "confirm-base" });
     }
   }
 
-  // ── Stage 2: detect surfaces (called after user confirms base render) ────────
+  // ── Stage 2 ───────────────────────────────────────────────────────────────
 
   async function runStage2() {
-    set({ error: null, loading: true, step: "stage1", loadingMessage: "Identifying surfaces in your space…" });
+    set({ error: null, loading: true, step: "stage1", loadingMessage: t("loading.surfaces", L) });
     try {
       const result = await post<{ surfaces: Surface[] }>("/api/stage2", {
         baseRenderBase64: state.baseRenderBase64,
@@ -942,9 +985,7 @@ export default function Home() {
       const surfaces = result.surfaces;
 
       if (surfaces.length === 0) {
-        setError(
-          "We couldn't find any suitable surfaces in this image. Try a cleaner screenshot with more visible walls or floor."
-        );
+        setError(t("error.noSurfaces", L));
         return;
       }
 
@@ -957,21 +998,19 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Surface detection failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("error.surfaceFailed", L));
       set({ step: "confirm-base" });
     }
   }
 
-  // ── Stage 3: generate previews ────────────────────────────────────────────
+  // ── Stage 3 ───────────────────────────────────────────────────────────────
 
   async function handleGeneratePreviews() {
     const { surfaces, surfaceMaterials, scale } = state;
-
-    // Only process surfaces that have a material uploaded
     const surfacesWithMaterial = surfaces.filter((s) => surfaceMaterials[s.label]);
 
     if (surfacesWithMaterial.length === 0) {
-      setError("Please upload at least one stone material photo.");
+      setError(t("error.noMaterial", L));
       return;
     }
 
@@ -980,7 +1019,7 @@ export default function Home() {
       error: null,
       loading: true,
       step: "stage3",
-      loadingMessage: `Previewing surface 1 of ${count}: ${surfacesWithMaterial[0].label}…`,
+      loadingMessage: t("loading.preview", L).replace("{i}", "1").replace("{n}", String(count)).replace("{label}", surfacesWithMaterial[0].label),
     });
 
     try {
@@ -989,7 +1028,7 @@ export default function Home() {
       for (let i = 0; i < surfacesWithMaterial.length; i++) {
         const surface = surfacesWithMaterial[i];
         set({
-          loadingMessage: `Previewing surface ${i + 1} of ${count}: ${surface.label}…`,
+          loadingMessage: t("loading.preview", L).replace("{i}", String(i + 1)).replace("{n}", String(count)).replace("{label}", surface.label),
         });
 
         const result = await post<{
@@ -1018,12 +1057,12 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Preview generation failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("error.previewFailed", L));
       set({ step: "configure" });
     }
   }
 
-  // ── Stage 4: final render ─────────────────────────────────────────────────
+  // ── Stage 4 ───────────────────────────────────────────────────────────────
 
   async function handleFinalRender() {
     const { surfaces, surfaceMaterials, scale, renderOptions } = state;
@@ -1034,7 +1073,7 @@ export default function Home() {
       error: null,
       loading: true,
       step: "stage4",
-      loadingMessage: `Describing material 1 of ${count}: ${surfacesWithMaterial[0].label}…`,
+      loadingMessage: t("loading.describeMat", L).replace("{i}", "1").replace("{n}", String(count)).replace("{label}", surfacesWithMaterial[0].label),
     });
 
     try {
@@ -1045,15 +1084,13 @@ export default function Home() {
         const surface = surfacesWithMaterial[i];
         const mat = surfaceMaterials[surface.label];
 
-        // Describe the material first (quick call, separate timeout budget)
-        set({ loadingMessage: `Describing material ${i + 1} of ${count}: ${surface.label}…` });
+        set({ loadingMessage: t("loading.describeMat", L).replace("{i}", String(i + 1)).replace("{n}", String(count)).replace("{label}", surface.label) });
         const { description: materialDescription } = await post<{ description: string }>(
           "/api/describe-stone",
           { stoneBase64: mat.base64, stoneMimeType: mat.mimeType }
         );
 
-        // Apply this surface's material on top of the accumulated render
-        set({ loadingMessage: `Rendering surface ${i + 1} of ${count}: ${surface.label}…` });
+        set({ loadingMessage: t("loading.renderSurface", L).replace("{i}", String(i + 1)).replace("{n}", String(count)).replace("{label}", surface.label) });
         const result = await post<{ base64: string; mimeType: string }>(
           "/api/stage4",
           {
@@ -1085,7 +1122,7 @@ export default function Home() {
         error: null,
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Final render failed. Please try again.");
+      setError(err instanceof Error ? err.message : t("error.finalFailed", L));
       set({ step: "render-options" });
     }
   }
@@ -1094,10 +1131,63 @@ export default function Home() {
 
   const { step, loading, loadingMessage, error } = state;
 
-  // Check if project setup is ready to generate
   const canGenerate =
     state.screenshotPreviewUrl !== "" &&
     state.projectName.trim() !== "";
+
+  // ── Language picker (shown first) ─────────────────────────────────────────
+  if (lang === null) {
+    return <LanguagePicker onSelect={setLang} />;
+  }
+
+  // ── Render option labels (translated) ─────────────────────────────────────
+  const renderOptionGroups = [
+    {
+      label: t("options.lighting", L),
+      key: "lightingStyle" as keyof RenderOptions,
+      options: [
+        { value: "natural-daylight", label: t("opt.natural-daylight", L) },
+        { value: "golden-hour", label: t("opt.golden-hour", L) },
+        { value: "overcast", label: t("opt.overcast", L) },
+        { value: "dramatic-spotlight", label: t("opt.dramatic-spotlight", L) },
+        { value: "candlelight", label: t("opt.candlelight", L) },
+        { value: "blue-hour", label: t("opt.blue-hour", L) },
+        { value: "night-interior", label: t("opt.night-interior", L) },
+      ],
+    },
+    {
+      label: t("options.timeOfDay", L),
+      key: "timeOfDay" as keyof RenderOptions,
+      options: [
+        { value: "morning", label: t("opt.morning", L) },
+        { value: "midday", label: t("opt.midday", L) },
+        { value: "afternoon", label: t("opt.afternoon", L) },
+        { value: "evening", label: t("opt.evening", L) },
+        { value: "night", label: t("opt.night", L) },
+      ],
+    },
+    {
+      label: t("options.mood", L),
+      key: "mood" as keyof RenderOptions,
+      options: [
+        { value: "bright-airy", label: t("opt.bright-airy", L) },
+        { value: "warm-cosy", label: t("opt.warm-cosy", L) },
+        { value: "moody-dramatic", label: t("opt.moody-dramatic", L) },
+        { value: "clean-minimal", label: t("opt.clean-minimal", L) },
+        { value: "luxurious-opulent", label: t("opt.luxurious-opulent", L) },
+        { value: "rustic-natural", label: t("opt.rustic-natural", L) },
+      ],
+    },
+    {
+      label: t("options.camera", L),
+      key: "cameraStyle" as keyof RenderOptions,
+      options: [
+        { value: "wide-angle", label: t("opt.wide-angle", L) },
+        { value: "standard", label: t("opt.standard", L) },
+        { value: "intimate", label: t("opt.intimate", L) },
+      ],
+    },
+  ];
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -1110,7 +1200,7 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-2">
               <span className="font-display text-stone-100 text-lg font-semibold tracking-tight">
-                Render Studio
+                {t("header.title", L)}
               </span>
               {state.projectName && (
                 <span className="text-stone-500 text-sm font-normal hidden sm:inline">
@@ -1119,9 +1209,18 @@ export default function Home() {
               )}
             </div>
           </div>
-          {step !== "upload" && (
-            <StepBar current={step} />
-          )}
+          <div className="flex items-center gap-3">
+            {step !== "upload" && (
+              <StepBar current={step} lang={L} />
+            )}
+            <button
+              onClick={() => setLang(L === "en" ? "it" : "en")}
+              className="text-xs text-stone-500 hover:text-stone-300 transition-colors px-2 py-1 rounded border border-stone-800 hover:border-stone-600"
+              title={L === "en" ? "Passa all'italiano" : "Switch to English"}
+            >
+              {L === "en" ? "🇮🇹" : "🇬🇧"}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -1133,35 +1232,34 @@ export default function Home() {
           <div className="space-y-6 animate-slide-up">
             <div className="text-center space-y-3">
               <h1 className="font-display text-3xl sm:text-4xl text-stone-100 leading-tight">
-                Turn your drawings into{" "}
-                <span className="text-gold">photorealistic renders</span>
+                {t("upload.hero", L)}{" "}
+                <span className="text-gold">{t("upload.heroHighlight", L)}</span>
               </h1>
               <p className="text-stone-400 text-base max-w-lg mx-auto">
-                Set up your project, upload reference images for inspiration,
-                and we&apos;ll generate three render variants automatically.
+                {t("upload.subtitle", L)}
               </p>
             </div>
 
             {/* Project name */}
             <div className="card p-6 space-y-4">
               <div>
-                <h2 className="text-stone-100 text-xl font-semibold">Project setup</h2>
+                <h2 className="text-stone-100 text-xl font-semibold">{t("upload.projectSetup", L)}</h2>
                 <p className="text-stone-400 text-sm mt-1">
-                  Name your project and upload the SketchUp screenshot.
+                  {t("upload.projectSetupSub", L)}
                 </p>
               </div>
               <div className="space-y-1.5">
-                <label className="text-stone-300 text-sm font-medium">Project name</label>
+                <label className="text-stone-300 text-sm font-medium">{t("upload.projectName", L)}</label>
                 <input
                   type="text"
                   value={state.projectName}
                   onChange={(e) => set({ projectName: e.target.value })}
-                  placeholder="e.g. Candidasa Villa"
+                  placeholder={t("upload.projectNamePlaceholder", L)}
                   className="w-full bg-stone-900 border border-stone-700 text-stone-200 text-sm rounded-lg px-3 py-2.5 focus:outline-none focus:ring-1 focus:ring-gold/50 focus:border-gold/50 placeholder:text-stone-600"
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-stone-300 text-sm font-medium">SketchUp screenshot</label>
+                <label className="text-stone-300 text-sm font-medium">{t("upload.screenshot", L)}</label>
                 <DropZone
                   onFile={async (file) => {
                     const { base64, mimeType } = await fileToBase64(file);
@@ -1171,10 +1269,11 @@ export default function Home() {
                       screenshotPreviewUrl: dataUrl(base64, mimeType),
                     });
                   }}
-                  label="Drop your SketchUp screenshot here"
-                  sublabel="Or click to browse your files"
+                  label={t("upload.dropScreenshot", L)}
+                  sublabel={t("upload.dropBrowse", L)}
                   previewUrl={state.screenshotPreviewUrl || undefined}
                   className="h-48"
+                  lang={L}
                 />
               </div>
             </div>
@@ -1182,14 +1281,12 @@ export default function Home() {
             {/* Reference images */}
             <div className="card p-6 space-y-4">
               <div>
-                <h2 className="text-stone-100 text-lg font-semibold">Reference images</h2>
+                <h2 className="text-stone-100 text-lg font-semibold">{t("upload.refTitle", L)}</h2>
                 <p className="text-stone-400 text-sm mt-1">
-                  Upload renders, photos, or mood board images for inspiration.
-                  Two variant renders will be generated based on these references.
+                  {t("upload.refSub", L)}
                 </p>
               </div>
 
-              {/* Uploaded references */}
               {state.referenceImages.length > 0 && (
                 <div className="space-y-3">
                   {state.referenceImages.map((ref) => (
@@ -1204,7 +1301,7 @@ export default function Home() {
                         <textarea
                           value={ref.inspirationNote}
                           onChange={(e) => updateReferenceNote(ref.id, e.target.value)}
-                          placeholder="What should we draw inspiration from? e.g. 'The warm timber ceiling proportions' or 'The stone wall texture and colour palette'"
+                          placeholder={t("upload.refNotePlaceholder", L)}
                           className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-sm text-stone-100 placeholder-stone-500 resize-none focus:outline-none focus:border-gold/60 transition-colors"
                           rows={2}
                         />
@@ -1225,8 +1322,8 @@ export default function Home() {
 
               <MultiDropZone
                 onFiles={handleAddReferenceImages}
-                label="Add reference images"
-                sublabel="Drop multiple images or click to browse"
+                label={t("upload.addRef", L)}
+                sublabel={t("upload.addRefSub", L)}
                 className="h-28"
               />
             </div>
@@ -1235,11 +1332,11 @@ export default function Home() {
             <div className="card p-5">
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
-                  <p className="text-stone-200 font-medium text-sm">Ready to generate?</p>
+                  <p className="text-stone-200 font-medium text-sm">{t("upload.ready", L)}</p>
                   <p className="text-stone-400 text-xs mt-0.5">
                     {state.referenceImages.length > 0
-                      ? `3 variants will be generated automatically (standard + 2 inspired). Takes ~3 minutes.`
-                      : `1 standard render will be generated. Add reference images above for 3 variants.`}
+                      ? t("upload.ready3", L)
+                      : t("upload.ready1", L)}
                   </p>
                 </div>
                 <button
@@ -1247,7 +1344,7 @@ export default function Home() {
                   disabled={!canGenerate}
                   onClick={() => handleStartGeneration()}
                 >
-                  Generate renders
+                  {t("upload.generate", L)}
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
@@ -1258,9 +1355,9 @@ export default function Home() {
             {/* Feature cards */}
             <div className="grid grid-cols-3 gap-3 text-center">
               {[
-                { icon: "🏗️", label: "Preserves your layout", sub: "Walls, doors & windows stay exactly as drawn" },
-                { icon: "🎨", label: "3 design variants", sub: "Standard + 2 reference-inspired options" },
-                { icon: "📐", label: "High quality output", sub: "Final render ready to share with clients" },
+                { icon: "🏗️", label: t("upload.feat1", L), sub: t("upload.feat1sub", L) },
+                { icon: "🎨", label: t("upload.feat2", L), sub: t("upload.feat2sub", L) },
+                { icon: "📐", label: t("upload.feat3", L), sub: t("upload.feat3sub", L) },
               ].map((f) => (
                 <div key={f.label} className="card p-4 space-y-1">
                   <div className="text-2xl">{f.icon}</div>
@@ -1274,7 +1371,7 @@ export default function Home() {
 
         {/* ── LOADING ── */}
         {loading && !error && (
-          <LoadingCard message={loadingMessage} />
+          <LoadingCard message={loadingMessage} lang={L} />
         )}
 
         {/* ── ERROR ── */}
@@ -1282,22 +1379,23 @@ export default function Home() {
           <ErrorCard
             message={error}
             onRetry={() => set({ ...EMPTY_STATE, projectName: state.projectName, referenceImages: state.referenceImages })}
+            lang={L}
           />
         )}
 
-        {/* ── VARIANT REVIEW (3 variants) ── */}
+        {/* ── VARIANT REVIEW ── */}
         {step === "variant-review" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 1 of 5 — pick or combine</p>
-              <h2 className="text-stone-100 text-xl font-semibold">Review your render variants</h2>
+              <p className="text-stone-400 text-sm">{t("variants.step", L)}</p>
+              <h2 className="text-stone-100 text-xl font-semibold">{t("variants.title", L)}</h2>
               <p className="text-stone-400 text-sm">
-                We generated {state.variants.length} variant{state.variants.length !== 1 ? "s" : ""}.
-                You can pick one directly or describe what to combine from each.
+                {t("variants.sub", L)
+                  .replace("{n}", String(state.variants.length))
+                  .replace("{s}", state.variants.length !== 1 ? (L === "it" ? "i" : "s") : (L === "it" ? "e" : ""))}
               </p>
             </div>
 
-            {/* Variant cards */}
             <div className="space-y-4">
               {state.variants.map((variant) => (
                 <div key={variant.label} className="card overflow-hidden">
@@ -1313,7 +1411,7 @@ export default function Home() {
                       className="btn-secondary text-xs px-3 py-1.5"
                       onClick={() => handlePickVariant(variant)}
                     >
-                      Use this one
+                      {t("variants.useThis", L)}
                     </button>
                   </div>
                   <RenderImage base64={variant.base64} mimeType={variant.mimeType} />
@@ -1321,19 +1419,18 @@ export default function Home() {
               ))}
             </div>
 
-            {/* Combination feedback */}
             {state.variants.length > 1 && (
               <div className="card p-5 space-y-3">
                 <div>
-                  <h3 className="text-stone-200 font-medium text-sm">Combine the best of each</h3>
+                  <h3 className="text-stone-200 font-medium text-sm">{t("variants.combineTitle", L)}</h3>
                   <p className="text-stone-500 text-xs mt-0.5">
-                    Describe what you like from each variant and we&apos;ll merge them into one render.
+                    {t("variants.combineSub", L)}
                   </p>
                 </div>
                 <textarea
                   className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2.5 text-sm text-stone-100 placeholder-stone-500 resize-none focus:outline-none focus:border-gold/60 transition-colors"
                   rows={4}
-                  placeholder="e.g. I like the wall proportions from Variant A, the floor material from Standard, and the ceiling warmth from Variant B…"
+                  placeholder={t("variants.combinePlaceholder", L)}
                   value={state.variantFeedback}
                   onChange={(e) => set({ variantFeedback: e.target.value })}
                 />
@@ -1342,7 +1439,7 @@ export default function Home() {
                   disabled={!state.variantFeedback.trim()}
                   onClick={handleCombineVariants}
                 >
-                  Combine into final base render
+                  {t("variants.combineBtn", L)}
                 </button>
               </div>
             )}
@@ -1353,18 +1450,16 @@ export default function Home() {
         {step === "confirm-base" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 2 of 5</p>
-              <h2 className="text-stone-100 text-xl font-semibold">Does the layout look right?</h2>
+              <p className="text-stone-400 text-sm">{t("confirm.step", L)}</p>
+              <h2 className="text-stone-100 text-xl font-semibold">{t("confirm.title", L)}</h2>
               <p className="text-stone-400 text-sm">
-                Check that the walls, doors, windows, and furniture positions match your drawing.
-                The structure must be correct before we apply any materials.
+                {t("confirm.sub", L)}
               </p>
             </div>
 
-            {/* Side-by-side comparison */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <p className="text-xs font-medium text-stone-400 uppercase tracking-wider px-1">Your SketchUp drawing</p>
+                <p className="text-xs font-medium text-stone-400 uppercase tracking-wider px-1">{t("confirm.original", L)}</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={state.screenshotPreviewUrl}
@@ -1373,7 +1468,7 @@ export default function Home() {
                 />
               </div>
               <div className="space-y-2">
-                <p className="text-xs font-medium text-stone-400 uppercase tracking-wider px-1">Photorealistic version</p>
+                <p className="text-xs font-medium text-stone-400 uppercase tracking-wider px-1">{t("confirm.render", L)}</p>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={dataUrl(state.baseRenderBase64, state.baseRenderMimeType)}
@@ -1383,18 +1478,17 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Feedback box */}
             <div className="card p-5 space-y-3">
               <div>
-                <h3 className="text-stone-200 font-medium text-sm">Something look off?</h3>
+                <h3 className="text-stone-200 font-medium text-sm">{t("confirm.fixTitle", L)}</h3>
                 <p className="text-stone-500 text-xs mt-0.5">
-                  Describe what needs fixing and we&apos;ll regenerate. Leave blank if it looks correct.
+                  {t("confirm.fixSub", L)}
                 </p>
               </div>
               <textarea
                 className="w-full bg-stone-800 border border-stone-700 rounded-lg px-3 py-2.5 text-sm text-stone-100 placeholder-stone-500 resize-none focus:outline-none focus:border-gold/60 transition-colors"
                 rows={3}
-                placeholder="e.g. The ceiling looks too low, or the window on the left is missing…"
+                placeholder={t("confirm.fixPlaceholder", L)}
                 value={state.baseRenderFeedback}
                 onChange={(e) => set({ baseRenderFeedback: e.target.value })}
               />
@@ -1404,7 +1498,7 @@ export default function Home() {
                     className="btn-secondary"
                     onClick={() => set({ step: "variant-review" })}
                   >
-                    ← Back to variants
+                    {t("confirm.backVariants", L)}
                   </button>
                 )}
                 <button
@@ -1412,13 +1506,13 @@ export default function Home() {
                   disabled={!state.baseRenderFeedback.trim()}
                   onClick={handleRegenerateBase}
                 >
-                  Regenerate with these notes
+                  {t("confirm.regenerate", L)}
                 </button>
                 <button
                   className="btn-primary flex-1"
                   onClick={runStage2}
                 >
-                  Looks correct — identify surfaces
+                  {t("confirm.approve", L)}
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
@@ -1428,26 +1522,25 @@ export default function Home() {
           </div>
         )}
 
-        {/* ── CONFIGURE (surfaces + material upload, combined) ── */}
+        {/* ── CONFIGURE ── */}
         {(step === "surfaces" || step === "configure") && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 3 of 5</p>
-              <h2 className="text-stone-100 text-xl font-semibold">Choose materials for each surface</h2>
+              <p className="text-stone-400 text-sm">{t("config.step", L)}</p>
+              <h2 className="text-stone-100 text-xl font-semibold">{t("config.title", L)}</h2>
               <p className="text-stone-400 text-sm">
-                We found {state.surfaces.length} surface{state.surfaces.length !== 1 ? "s" : ""} in your space.
-                Upload a material photo next to any surface you want to change — leave it blank to keep it as-is.
+                {t("config.sub", L)
+                  .replace("{n}", String(state.surfaces.length))
+                  .replace("{s}", state.surfaces.length !== 1 ? (L === "it" ? "i" : "s") : (L === "it" ? "e" : ""))}
               </p>
             </div>
 
-            {/* Surface cards */}
             <div className="space-y-3">
               {state.surfaces.map((surface) => {
                 const material = state.surfaceMaterials[surface.label] as SurfaceMaterial | undefined;
                 return (
                   <div key={surface.label} className="card p-4">
                     <div className="flex flex-col sm:flex-row gap-4">
-                      {/* Surface info + upload */}
                       <div className="flex-1 min-w-0 flex flex-col justify-between gap-3">
                         <div>
                           <p className="text-stone-100 font-semibold text-sm">
@@ -1457,7 +1550,6 @@ export default function Home() {
                         </div>
 
                         {material ? (
-                          /* Material uploaded — show thumbnail + change button */
                           <div className="flex items-center gap-3 p-2 rounded-lg bg-stone-800/50 border border-stone-700">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
@@ -1466,10 +1558,11 @@ export default function Home() {
                               className="w-10 h-10 rounded-md object-cover border border-stone-600 flex-shrink-0"
                             />
                             <div className="flex-1 min-w-0">
-                              <p className="text-gold text-xs font-medium">Material uploaded</p>
-                              <p className="text-stone-500 text-xs">Will be applied in the render</p>
+                              <p className="text-gold text-xs font-medium">{t("config.matUploaded", L)}</p>
+                              <p className="text-stone-500 text-xs">{t("config.matApplied", L)}</p>
                             </div>
                             <ChangeFileButton
+                              lang={L}
                               onFile={async (file) => {
                                 const { base64, mimeType } = await materialFileToBase64(file);
                                 set({
@@ -1482,8 +1575,8 @@ export default function Home() {
                             />
                           </div>
                         ) : (
-                          /* No material yet — compact inline upload button */
                           <SurfaceUploadButton
+                            lang={L}
                             onFile={async (file) => {
                               const { base64, mimeType } = await materialFileToBase64(file);
                               set({
@@ -1507,14 +1600,14 @@ export default function Home() {
                 className="btn-secondary sm:w-auto"
                 onClick={() => set({ step: "confirm-base" })}
               >
-                ← Back
+                {t("config.back", L)}
               </button>
               <button
                 className="btn-primary flex-1"
                 disabled={Object.keys(state.surfaceMaterials).length === 0}
                 onClick={handleGeneratePreviews}
               >
-                Generate previews
+                {t("config.generatePreviews", L)}
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                 </svg>
@@ -1527,11 +1620,10 @@ export default function Home() {
         {step === "review" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 4 of 5 — almost there!</p>
-              <h2 className="text-stone-100 text-xl font-semibold">Here&apos;s a preview</h2>
+              <p className="text-stone-400 text-sm">{t("review.step", L)}</p>
+              <h2 className="text-stone-100 text-xl font-semibold">{t("review.title", L)}</h2>
               <p className="text-stone-400 text-sm">
-                These are quick previews — the final render will be significantly higher quality.
-                If you&apos;re happy with the direction, click &ldquo;Create final render&rdquo; below.
+                {t("review.sub", L)}
               </p>
             </div>
 
@@ -1543,7 +1635,7 @@ export default function Home() {
                     <span className="text-stone-300 text-sm font-medium">
                       {friendlyName(preview.surface)}
                     </span>
-                    <span className="text-stone-600 text-xs">— preview</span>
+                    <span className="text-stone-600 text-xs">— {t("review.preview", L)}</span>
                   </div>
                   <RenderImage
                     base64={preview.base64}
@@ -1555,9 +1647,9 @@ export default function Home() {
 
             <div className="card p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
-                <p className="text-stone-200 font-medium text-sm">Happy with the direction?</p>
+                <p className="text-stone-200 font-medium text-sm">{t("review.happy", L)}</p>
                 <p className="text-stone-400 text-xs mt-0.5">
-                  The final render will be higher resolution and fully composited.
+                  {t("review.happySub", L)}
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -1565,13 +1657,13 @@ export default function Home() {
                   className="btn-secondary"
                   onClick={() => set({ step: "configure", previewImages: [] })}
                 >
-                  ← Change materials
+                  {t("review.changeMats", L)}
                 </button>
                 <button
                   className="btn-primary"
                   onClick={() => set({ step: "render-options" })}
                 >
-                  Set render options →
+                  {t("review.setOptions", L)}
                 </button>
               </div>
             </div>
@@ -1582,67 +1674,15 @@ export default function Home() {
         {step === "render-options" && !loading && !error && (
           <div className="space-y-6 animate-slide-up">
             <div className="card p-6 space-y-2">
-              <p className="text-stone-400 text-sm">Step 5 of 5 — almost there!</p>
-              <h2 className="text-stone-100 text-xl font-semibold">Render options</h2>
+              <p className="text-stone-400 text-sm">{t("options.step", L)}</p>
+              <h2 className="text-stone-100 text-xl font-semibold">{t("options.title", L)}</h2>
               <p className="text-stone-400 text-sm">
-                Fine-tune the lighting, mood, and atmosphere of your final render.
+                {t("options.sub", L)}
               </p>
             </div>
 
             <div className="card p-6 space-y-5">
-              {(
-                [
-                  {
-                    label: "Lighting style",
-                    key: "lightingStyle" as keyof RenderOptions,
-                    options: [
-                      { value: "natural-daylight", label: "Natural daylight" },
-                      { value: "golden-hour", label: "Golden hour" },
-                      { value: "overcast", label: "Overcast / diffused" },
-                      { value: "dramatic-spotlight", label: "Dramatic spotlight" },
-                      { value: "candlelight", label: "Candlelight / warm ambient" },
-                      { value: "blue-hour", label: "Blue hour / dusk" },
-                      { value: "night-interior", label: "Night interior" },
-                    ],
-                  },
-                  {
-                    label: "Time of day",
-                    key: "timeOfDay" as keyof RenderOptions,
-                    options: [
-                      { value: "morning", label: "Morning" },
-                      { value: "midday", label: "Midday" },
-                      { value: "afternoon", label: "Afternoon" },
-                      { value: "evening", label: "Evening" },
-                      { value: "night", label: "Night" },
-                    ],
-                  },
-                  {
-                    label: "Mood",
-                    key: "mood" as keyof RenderOptions,
-                    options: [
-                      { value: "bright-airy", label: "Bright & airy" },
-                      { value: "warm-cosy", label: "Warm & cosy" },
-                      { value: "moody-dramatic", label: "Moody & dramatic" },
-                      { value: "clean-minimal", label: "Clean & minimal" },
-                      { value: "luxurious-opulent", label: "Luxurious & opulent" },
-                      { value: "rustic-natural", label: "Rustic & natural" },
-                    ],
-                  },
-                  {
-                    label: "Camera style",
-                    key: "cameraStyle" as keyof RenderOptions,
-                    options: [
-                      { value: "wide-angle", label: "Wide angle overview" },
-                      { value: "standard", label: "Standard perspective" },
-                      { value: "intimate", label: "Intimate close-up" },
-                    ],
-                  },
-                ] as Array<{
-                  label: string;
-                  key: keyof RenderOptions;
-                  options: Array<{ value: string; label: string }>;
-                }>
-              ).map(({ label, key, options }) => (
+              {renderOptionGroups.map(({ label, key, options }) => (
                 <div key={key} className="space-y-1.5">
                   <label className="text-stone-300 text-sm font-medium">{label}</label>
                   <select
@@ -1666,15 +1706,16 @@ export default function Home() {
                 <LocationSearch
                   value={state.renderOptions.location}
                   onChange={(name) => set({ renderOptions: { ...state.renderOptions, location: name } })}
+                  lang={L}
                 />
               </div>
             </div>
 
             <div className="card p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
               <div>
-                <p className="text-stone-200 font-medium text-sm">Ready to generate?</p>
+                <p className="text-stone-200 font-medium text-sm">{t("options.ready", L)}</p>
                 <p className="text-stone-400 text-xs mt-0.5">
-                  The final render takes 1–2 minutes at full quality.
+                  {t("options.readySub", L)}
                 </p>
               </div>
               <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
@@ -1682,13 +1723,13 @@ export default function Home() {
                   className="btn-secondary"
                   onClick={() => set({ step: "review" })}
                 >
-                  ← Back to preview
+                  {t("options.backPreview", L)}
                 </button>
                 <button
                   className="btn-primary"
                   onClick={handleFinalRender}
                 >
-                  Create final render
+                  {t("options.createFinal", L)}
                 </button>
               </div>
             </div>
@@ -1704,9 +1745,9 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
               </div>
-              <h2 className="text-stone-100 text-2xl font-semibold font-display">Your render is ready</h2>
+              <h2 className="text-stone-100 text-2xl font-semibold font-display">{t("complete.title", L)}</h2>
               <p className="text-stone-400 text-sm">
-                High-quality photorealistic render with your stone material applied.
+                {t("complete.sub", L)}
               </p>
             </div>
 
@@ -1732,13 +1773,13 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                     d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
                 </svg>
-                Download render
+                {t("complete.download", L)}
               </button>
               <button
                 className="btn-secondary"
                 onClick={() => setState(EMPTY_STATE)}
               >
-                Start a new project
+                {t("complete.newProject", L)}
               </button>
             </div>
           </div>
@@ -1748,7 +1789,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="border-t border-stone-800 py-6">
         <p className="text-center text-stone-600 text-xs">
-          Tiba Render Studio — powered by Gemini &amp; Claude
+          {t("footer.text", L)}
         </p>
       </footer>
     </div>
