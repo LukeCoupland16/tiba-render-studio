@@ -4,7 +4,9 @@
 
 import type { RenderOptions } from "@/lib/types";
 
-export const STRUCTURE_INSTRUCTION = `CRITICAL STRUCTURE INSTRUCTION: The architectural space in this render MUST be structurally identical to the reference SketchUp screenshot. Preserve the exact position of every wall, opening, ceiling, floor plane, and furniture element. Do not add, remove, or relocate any architectural element. Treat the SketchUp geometry as non-negotiable spatial boundaries. You are only permitted to apply photorealistic materials, textures, and lighting within the existing structure — not to alter it.`;
+export const STRUCTURE_INSTRUCTION = `CRITICAL STRUCTURE INSTRUCTION: The architectural space in this render MUST be structurally identical to the reference SketchUp screenshot. Preserve the exact position of every wall, opening, ceiling, floor plane, and furniture element. Do not add, remove, or relocate any architectural element. Treat the SketchUp geometry as non-negotiable spatial boundaries. You are only permitted to apply photorealistic materials, textures, and lighting within the existing structure — not to alter it.
+
+CRITICAL ASPECT RATIO INSTRUCTION: The output image MUST have the EXACT same aspect ratio and orientation as the input SketchUp screenshot. If the input is landscape, the output MUST be landscape. If the input is portrait, the output MUST be portrait. Do NOT crop, pad, or change the aspect ratio under any circumstances. Match the input dimensions exactly.`;
 
 export const STYLE_BLOCK = `Aesthetic requirements:
 - Wide dynamic range, 24–35mm prime lens feel, filmic white balance

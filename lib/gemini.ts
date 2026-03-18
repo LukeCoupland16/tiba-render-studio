@@ -31,11 +31,13 @@ export async function generateImage(
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
+  const aspectRatioReminder = "IMPORTANT: Output image MUST match the exact same aspect ratio and orientation (landscape/portrait) as the first input image. Do NOT crop or change dimensions.";
+
   const parts: unknown[] = [
     ...images.map((img) => ({
       inlineData: { mimeType: img.mimeType, data: img.data },
     })),
-    { text: prompt },
+    { text: `${prompt}\n\n${aspectRatioReminder}` },
   ];
 
   const body = {
