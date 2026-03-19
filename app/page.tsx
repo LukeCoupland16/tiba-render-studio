@@ -1495,6 +1495,24 @@ export default function Home() {
                 </button>
               </div>
             )}
+
+            {/* Skip to surfaces — use standard variant, auto-approve */}
+            <div className="card p-4 flex items-center justify-between">
+              <p className="text-stone-500 text-xs">Want to skip ahead?</p>
+              <button
+                className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
+                onClick={() => {
+                  const std = state.variants.find((v) => v.label === "standard") || state.variants[0];
+                  set({
+                    baseRenderBase64: std.base64,
+                    baseRenderMimeType: std.mimeType,
+                  });
+                  runStage2();
+                }}
+              >
+                Skip to material setup
+              </button>
+            </div>
           </div>
         )}
 
@@ -1568,6 +1586,14 @@ export default function Home() {
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
+                </button>
+              </div>
+              <div className="border-t border-stone-800 pt-3 mt-3 flex justify-end">
+                <button
+                  className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
+                  onClick={() => set({ step: "render-options" })}
+                >
+                  Skip to render options (no materials)
                 </button>
               </div>
             </div>
@@ -1697,25 +1723,35 @@ export default function Home() {
               ))}
             </div>
 
-            <div className="card p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <p className="text-stone-200 font-medium text-sm">{t("review.happy", L)}</p>
-                <p className="text-stone-400 text-xs mt-0.5">
-                  {t("review.happySub", L)}
-                </p>
+            <div className="card p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <p className="text-stone-200 font-medium text-sm">{t("review.happy", L)}</p>
+                  <p className="text-stone-400 text-xs mt-0.5">
+                    {t("review.happySub", L)}
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                  <button
+                    className="btn-secondary"
+                    onClick={() => set({ step: "configure", previewImages: [] })}
+                  >
+                    {t("review.changeMats", L)}
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={() => set({ step: "render-options" })}
+                  >
+                    {t("review.setOptions", L)}
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <div className="border-t border-stone-800 pt-3 flex justify-end">
                 <button
-                  className="btn-secondary"
-                  onClick={() => set({ step: "configure", previewImages: [] })}
+                  className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
+                  onClick={handleFinalRender}
                 >
-                  {t("review.changeMats", L)}
-                </button>
-                <button
-                  className="btn-primary"
-                  onClick={() => set({ step: "render-options" })}
-                >
-                  {t("review.setOptions", L)}
+                  Skip options &amp; render now (use defaults)
                 </button>
               </div>
             </div>
@@ -1763,25 +1799,35 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="card p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
-              <div>
-                <p className="text-stone-200 font-medium text-sm">{t("options.ready", L)}</p>
-                <p className="text-stone-400 text-xs mt-0.5">
-                  {t("options.readySub", L)}
-                </p>
+            <div className="card p-5 space-y-3">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div>
+                  <p className="text-stone-200 font-medium text-sm">{t("options.ready", L)}</p>
+                  <p className="text-stone-400 text-xs mt-0.5">
+                    {t("options.readySub", L)}
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+                  <button
+                    className="btn-secondary"
+                    onClick={() => set({ step: "review" })}
+                  >
+                    {t("options.backPreview", L)}
+                  </button>
+                  <button
+                    className="btn-primary"
+                    onClick={handleFinalRender}
+                  >
+                    {t("options.createFinal", L)}
+                  </button>
+                </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
+              <div className="border-t border-stone-800 pt-3 flex justify-end">
                 <button
-                  className="btn-secondary"
-                  onClick={() => set({ step: "review" })}
-                >
-                  {t("options.backPreview", L)}
-                </button>
-                <button
-                  className="btn-primary"
+                  className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
                   onClick={handleFinalRender}
                 >
-                  {t("options.createFinal", L)}
+                  Skip &amp; render with defaults
                 </button>
               </div>
             </div>
