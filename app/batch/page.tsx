@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type {
   BatchState,
   BatchRenderSlot,
@@ -162,6 +163,52 @@ const CONCURRENCY = 2;
 
 export default function BatchPage() {
   const [state, setState] = useState<BatchState>(EMPTY_BATCH_STATE);
+  const [selectedSlots, setSelectedSlots] = useState<Set<string>>(new Set());
+  const router = useRouter();
+
+  const toggleSlot = useCallback((id: string) => {
+    setSelectedSlots((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const selectAll = useCallback(() => {
+    const done = state.slots.filter((s) => s.status === "done" && s.base64);
+    setSelectedSlots(new Set(done.map((s) => s.id)));
+  }, [state.slots]);
+
+  const selectNone = useCallback(() => {
+    setSelectedSlots(new Set());
+  }, []);
+
+  function processSelected() {
+    const queue = state.slots
+      .filter((s) => selectedSlots.has(s.id) && s.status === "done" && s.base64)
+      .map((s) => ({
+        id: s.id,
+        label: s.label,
+        base64: s.base64!,
+        mimeType: s.mimeType!,
+      }));
+
+    if (queue.length === 0) return;
+
+    // Store queue + screenshot in sessionStorage for the main page to pick up
+    sessionStorage.setItem(
+      "batchQueue",
+      JSON.stringify({
+        projectName: state.projectName,
+        screenshotBase64: state.screenshotBase64,
+        screenshotMimeType: state.screenshotMimeType,
+        queue,
+      })
+    );
+
+    router.push("/");
+  }
 
   const set = useCallback(
     (patch: Partial<BatchState>) =>
@@ -622,9 +669,29 @@ export default function BatchPage() {
                     )}
                   </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   <button
                     className="btn-primary"
+                    onClick={processSelected}
+                    disabled={selectedSlots.size === 0}
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M13 7l5 5m0 0l-5 5m5-5H6"
+                      />
+                    </svg>
+                    Process Selected ({selectedSlots.size})
+                  </button>
+                  <button
+                    className="btn-secondary"
                     onClick={exportToDrive}
                     disabled={state.driveUploading || completedCount === 0}
                   >
@@ -634,22 +701,7 @@ export default function BatchPage() {
                         Uploading...
                       </>
                     ) : (
-                      <>
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                          stroke="currentColor"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                          />
-                        </svg>
-                        Export to Google Drive
-                      </>
+                      "Export to Google Drive"
                     )}
                   </button>
                   <button
@@ -684,21 +736,53 @@ export default function BatchPage() {
               )}
             </div>
 
+            {/* Select controls */}
+            <div className="flex items-center gap-3">
+              <p className="text-stone-400 text-sm">Select renders to process:</p>
+              <button
+                onClick={selectAll}
+                className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
+              >
+                Select all
+              </button>
+              <button
+                onClick={selectNone}
+                className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
+              >
+                Clear
+              </button>
+            </div>
+
             {/* Results gallery — each render side-by-side with SketchUp original */}
             <div className="space-y-4">
               {state.slots
                 .filter((s) => s.status === "done" && s.base64)
                 .map((slot) => (
-                  <div key={slot.id} className="card overflow-hidden">
+                  <div
+                    key={slot.id}
+                    className={`card overflow-hidden cursor-pointer transition-all ${
+                      selectedSlots.has(slot.id)
+                        ? "ring-2 ring-gold border-gold"
+                        : ""
+                    }`}
+                    onClick={() => toggleSlot(slot.id)}
+                  >
                     <div className="px-4 py-3 border-b border-stone-800 flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            slot.framing === "grand-scale"
-                              ? "bg-blue-400"
-                              : "bg-stone-400"
+                        {/* Selection checkbox */}
+                        <div
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                            selectedSlots.has(slot.id)
+                              ? "bg-gold border-gold"
+                              : "border-stone-600"
                           }`}
-                        />
+                        >
+                          {selectedSlots.has(slot.id) && (
+                            <svg className="w-3 h-3 text-stone-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </div>
                         <span className="text-stone-200 text-sm font-medium">
                           {slot.label}
                         </span>
@@ -709,13 +793,14 @@ export default function BatchPage() {
                         )}
                       </div>
                       <button
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           downloadImage(
                             slot.base64!,
                             slot.mimeType!,
                             `${state.projectName || "batch"}_${slot.id}.jpg`
-                          )
-                        }
+                          );
+                        }}
                         className="text-stone-400 hover:text-gold transition-colors"
                         title="Download"
                       >

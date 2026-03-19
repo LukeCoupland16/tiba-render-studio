@@ -749,12 +749,86 @@ function LocationSearch({
 // Main page
 // ─────────────────────────────────────────────────────────────────────────────
 
+interface BatchQueueItem {
+  id: string;
+  label: string;
+  base64: string;
+  mimeType: string;
+}
+
+interface BatchQueueData {
+  projectName: string;
+  screenshotBase64: string;
+  screenshotMimeType: string;
+  queue: BatchQueueItem[];
+}
+
 export default function Home() {
   const [lang, setLang] = useState<Lang | null>(null);
   const [state, setState] = useState<AppState>(EMPTY_STATE);
   const [v3Mode, setV3Mode] = useState(false);
+  const [batchQueue, setBatchQueue] = useState<BatchQueueItem[]>([]);
+  const [batchCurrentIndex, setBatchCurrentIndex] = useState(0);
+  const [batchProjectName, setBatchProjectName] = useState("");
 
   // ── helpers ────────────────────────────────────────────────────────────────
+
+  // ── Check for batch queue from /batch page ─────────────────────────────────
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("batchQueue");
+      if (!raw) return;
+      sessionStorage.removeItem("batchQueue");
+
+      const data: BatchQueueData = JSON.parse(raw);
+      if (!data.queue || data.queue.length === 0) return;
+
+      const first = data.queue[0];
+      setBatchQueue(data.queue);
+      setBatchCurrentIndex(0);
+      setBatchProjectName(data.projectName);
+
+      // Skip language picker if coming from batch
+      setLang("en");
+
+      setState({
+        ...EMPTY_STATE,
+        projectName: `${data.projectName} — ${first.label}`,
+        screenshotBase64: data.screenshotBase64,
+        screenshotMimeType: data.screenshotMimeType,
+        screenshotPreviewUrl: `data:${data.screenshotMimeType};base64,${data.screenshotBase64}`,
+        baseRenderBase64: first.base64,
+        baseRenderMimeType: first.mimeType,
+        step: "confirm-base",
+      });
+    } catch {
+      // ignore parse errors
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function loadNextBatchRender() {
+    const nextIdx = batchCurrentIndex + 1;
+    if (nextIdx >= batchQueue.length) {
+      // All done — reset
+      setBatchQueue([]);
+      setBatchCurrentIndex(0);
+      return;
+    }
+
+    const next = batchQueue[nextIdx];
+    setBatchCurrentIndex(nextIdx);
+
+    setState({
+      ...EMPTY_STATE,
+      projectName: `${batchProjectName} — ${next.label}`,
+      screenshotBase64: state.screenshotBase64,
+      screenshotMimeType: state.screenshotMimeType,
+      screenshotPreviewUrl: state.screenshotPreviewUrl,
+      baseRenderBase64: next.base64,
+      baseRenderMimeType: next.mimeType,
+      step: "confirm-base",
+    });
+  }
 
   // Safe lang accessor (defaults to "en" before selection, but won't render main UI until selected)
   const L = lang ?? "en";
@@ -1691,6 +1765,14 @@ export default function Home() {
                 </svg>
               </button>
             </div>
+            <div className="border-t border-stone-800 pt-3 flex justify-end">
+              <button
+                className="text-xs text-stone-400 hover:text-gold transition-colors underline underline-offset-2"
+                onClick={() => set({ step: "render-options" })}
+              >
+                Skip materials &amp; go to render options
+              </button>
+            </div>
           </div>
         )}
 
@@ -1856,6 +1938,29 @@ export default function Home() {
               />
             </div>
 
+            {/* Batch queue progress */}
+            {batchQueue.length > 0 && (
+              <div className="card p-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-stone-400 text-sm">
+                    Batch progress: <span className="text-stone-200 font-medium">{batchCurrentIndex + 1}</span> of <span className="text-stone-200 font-medium">{batchQueue.length}</span> renders
+                  </p>
+                  <div className="flex gap-1">
+                    {batchQueue.map((item, i) => (
+                      <div
+                        key={item.id}
+                        className={`w-2 h-2 rounded-full ${
+                          i < batchCurrentIndex ? "bg-green-500" :
+                          i === batchCurrentIndex ? "bg-gold" :
+                          "bg-stone-700"
+                        }`}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 className="btn-primary flex-1 py-4 text-base"
@@ -1873,12 +1978,31 @@ export default function Home() {
                 </svg>
                 {t("complete.download", L)}
               </button>
-              <button
-                className="btn-secondary"
-                onClick={() => setState(EMPTY_STATE)}
-              >
-                {t("complete.newProject", L)}
-              </button>
+              {batchQueue.length > 0 && batchCurrentIndex < batchQueue.length - 1 ? (
+                <button
+                  className="btn-primary flex-1 py-4 text-base"
+                  onClick={loadNextBatchRender}
+                >
+                  Next Render ({batchCurrentIndex + 2}/{batchQueue.length})
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                  </svg>
+                </button>
+              ) : batchQueue.length > 0 ? (
+                <Link
+                  href="/batch"
+                  className="btn-secondary flex-1 py-4 text-base inline-flex items-center justify-center"
+                >
+                  Back to Batch Results
+                </Link>
+              ) : (
+                <button
+                  className="btn-secondary"
+                  onClick={() => setState(EMPTY_STATE)}
+                >
+                  {t("complete.newProject", L)}
+                </button>
+              )}
             </div>
           </div>
         )}
