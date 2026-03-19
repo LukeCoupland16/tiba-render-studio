@@ -158,7 +158,7 @@ function DropZone({
 // Main batch page
 // ─────────────────────────────────────────────────────────────────────────────
 
-const CONCURRENCY = 4;
+const CONCURRENCY = 2;
 
 export default function BatchPage() {
   const [state, setState] = useState<BatchState>(EMPTY_BATCH_STATE);
