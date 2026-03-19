@@ -11,11 +11,27 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
 
-function getDriveClient() {
+function getCredentials() {
   const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set in .env.local");
+  if (!raw) throw new Error("GOOGLE_SERVICE_ACCOUNT_JSON is not set");
 
-  const credentials = JSON.parse(raw);
+  // Try parsing as-is first, then try base64-decoded
+  try {
+    return JSON.parse(raw);
+  } catch {
+    try {
+      return JSON.parse(Buffer.from(raw, "base64").toString("utf-8"));
+    } catch {
+      // Vercel may strip quotes — try wrapping
+      throw new Error(
+        "Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON. Try base64-encoding the value: run `base64 -i your-key.json` and paste the output as the env var value."
+      );
+    }
+  }
+}
+
+function getDriveClient() {
+  const credentials = getCredentials();
 
   const auth = new google.auth.GoogleAuth({
     credentials,
