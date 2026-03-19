@@ -1,9 +1,13 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
+import Link from "next/link";
 import type { AppState, AppStep, Surface, SurfaceMaterial, RenderOptions, ReferenceImage, VariantRender } from "@/lib/types";
 import { EMPTY_STATE } from "@/lib/types";
 import { t, type Lang } from "@/lib/i18n";
+import dynamic from "next/dynamic";
+
+const V3Flow = dynamic(() => import("@/app/components/V3Flow"), { ssr: false });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -748,6 +752,7 @@ function LocationSearch({
 export default function Home() {
   const [lang, setLang] = useState<Lang | null>(null);
   const [state, setState] = useState<AppState>(EMPTY_STATE);
+  const [v3Mode, setV3Mode] = useState(false);
 
   // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -1228,7 +1233,23 @@ export default function Home() {
       <main className="flex-1 max-w-3xl mx-auto w-full px-4 sm:px-6 py-8 sm:py-12 space-y-6">
 
         {/* ── PROJECT SETUP / UPLOAD ── */}
-        {step === "upload" && !loading && !error && (
+        {step === "upload" && !loading && !error && v3Mode && (
+          <div className="space-y-6 animate-slide-up">
+            <V3Flow
+              onComplete={(base64, mimeType) => {
+                set({
+                  screenshotBase64: base64,
+                  screenshotMimeType: mimeType,
+                  screenshotPreviewUrl: `data:${mimeType};base64,${base64}`,
+                });
+                setV3Mode(false);
+              }}
+              onCancel={() => setV3Mode(false)}
+            />
+          </div>
+        )}
+
+        {step === "upload" && !loading && !error && !v3Mode && (
           <div className="space-y-6 animate-slide-up">
             <div className="text-center space-y-3">
               <h1 className="font-display text-3xl sm:text-4xl text-stone-100 leading-tight">
@@ -1238,6 +1259,37 @@ export default function Home() {
               <p className="text-stone-400 text-base max-w-lg mx-auto">
                 {t("upload.subtitle", L)}
               </p>
+            </div>
+
+            {/* Mode Toggle */}
+            <div className="card p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-stone-200 font-medium text-sm">Input Mode</p>
+                  <p className="text-stone-500 text-xs mt-0.5">
+                    Choose how to provide your architectural geometry
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-gold text-stone-950"
+                  >
+                    SketchUp Screenshot
+                  </button>
+                  <button
+                    onClick={() => setV3Mode(true)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-stone-800 text-stone-400 hover:text-stone-200 border border-stone-700 hover:border-gold/40 transition-all"
+                  >
+                    AutoCAD DXF (V3)
+                  </button>
+                  <Link
+                    href="/batch"
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-stone-800 text-stone-400 hover:text-stone-200 border border-stone-700 hover:border-gold/40 transition-all"
+                  >
+                    Batch Mode
+                  </Link>
+                </div>
+              </div>
             </div>
 
             {/* Project name */}

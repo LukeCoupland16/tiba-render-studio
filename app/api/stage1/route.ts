@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateImage } from "@/lib/gemini";
 import { stage1Prompt } from "@/lib/prompts";
+import type { Framing } from "@/lib/prompts";
 
 export const maxDuration = 60; // allow up to 5 min on Vercel Pro
 
@@ -13,10 +14,11 @@ export async function POST(req: NextRequest) {
     const body = await req.json() as {
       screenshotBase64?: string;
       screenshotMimeType?: string;
+      feedback?: string;
+      framing?: Framing;
     };
 
-    const { screenshotBase64, screenshotMimeType = "image/png", feedback } =
-      body as { screenshotBase64?: string; screenshotMimeType?: string; feedback?: string };
+    const { screenshotBase64, screenshotMimeType = "image/png", feedback, framing = "standard" } = body;
 
     if (!screenshotBase64) {
       return NextResponse.json(
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     const result = await generateImage(
-      stage1Prompt(feedback),
+      stage1Prompt(feedback, framing),
       [{ data: screenshotBase64, mimeType: screenshotMimeType }],
       true // use pro model for base render
     );

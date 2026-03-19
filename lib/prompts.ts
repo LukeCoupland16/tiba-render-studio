@@ -12,13 +12,20 @@ export const STYLE_BLOCK = `Aesthetic requirements:
 - Wide dynamic range, 24–35mm prime lens feel, filmic white balance
 - Photorealistic — not CGI, not 3D visualization`;
 
+// ── Grand scale framing block ────────────────────────────────────────────────
+export const GRAND_SCALE_BLOCK = `FRAMING OVERRIDE: Pull the camera back to show the FULL extent of the property and its surroundings. Use an ultra-wide 18–20 mm lens feel with a slightly elevated vantage point (ignore the default 24–35 mm instruction). Emphasise the grand scale of the architecture — show the complete facade, full landscaping, driveway, and surrounding context. Include generous amounts of sky, foreground, and peripheral context to convey the full scope and grandeur of the property. The building should feel monumental and expansive within its setting.`;
+
+export type Framing = "standard" | "grand-scale";
+
 // ── Stage 1: Convert SketchUp screenshot → photorealistic base render ─────────
-export function stage1Prompt(feedback?: string): string {
+export function stage1Prompt(feedback?: string, framing: Framing = "standard"): string {
   const feedbackBlock = feedback?.trim()
     ? `\n\nThe user reviewed a previous version and requested these corrections:\n"${feedback.trim()}"\nPlease address these points carefully while still following all structural constraints above.`
     : "";
 
-  return `${STRUCTURE_INSTRUCTION}
+  const framingBlock = framing === "grand-scale" ? `\n\n${GRAND_SCALE_BLOCK}` : "";
+
+  return `${STRUCTURE_INSTRUCTION}${framingBlock}
 
 Convert this SketchUp architectural screenshot into a photorealistic interior render. Use neutral, clean materials on all surfaces — no stone yet. Capture the space as a blank canvas ready for material application.
 
@@ -152,7 +159,8 @@ Push quality to the maximum. Reproduce the material faithfully — match its col
 // referenceNotes: array of { note } for each reference image supplied
 export function stage1VariantPrompt(
   referenceNotes: Array<{ note: string }>,
-  variantLabel: "A" | "B"
+  variantLabel: "A" | "B",
+  framing: Framing = "standard"
 ): string {
   const notesBlock = referenceNotes
     .map((r, i) => `  Reference image ${i + 1}: Draw inspiration from — "${r.note}"`)
@@ -163,7 +171,9 @@ export function stage1VariantPrompt(
       ? "Focus on proportions, spatial rhythm, and material palette from the reference images. Lean toward a faithful interpretation of the reference style."
       : "Take a more creative interpretation — use the reference images as a loose starting point but push the design further with bolder material choices, contrast, or atmosphere.";
 
-  return `${STRUCTURE_INSTRUCTION}
+  const framingBlock = framing === "grand-scale" ? `\n\n${GRAND_SCALE_BLOCK}` : "";
+
+  return `${STRUCTURE_INSTRUCTION}${framingBlock}
 
 You are viewing multiple images:
 1. The first image is the original SketchUp architectural screenshot — this is the spatial blueprint. Do NOT alter any geometry.

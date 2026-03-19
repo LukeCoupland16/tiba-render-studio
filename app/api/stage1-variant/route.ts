@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateImage } from "@/lib/gemini";
 import { stage1VariantPrompt } from "@/lib/prompts";
+import type { Framing } from "@/lib/prompts";
 import type { ImageInput } from "@/lib/gemini";
 
 export const maxDuration = 60;
@@ -16,6 +17,7 @@ export async function POST(req: NextRequest) {
       screenshotMimeType?: string;
       references: Array<{ base64: string; mimeType: string; note: string }>;
       variantLabel: "A" | "B";
+      framing?: Framing;
     };
 
     const {
@@ -23,6 +25,7 @@ export async function POST(req: NextRequest) {
       screenshotMimeType = "image/png",
       references,
       variantLabel,
+      framing = "standard",
     } = body;
 
     if (!screenshotBase64) {
@@ -41,7 +44,8 @@ export async function POST(req: NextRequest) {
 
     const prompt = stage1VariantPrompt(
       references.map((r) => ({ note: r.note })),
-      variantLabel
+      variantLabel,
+      framing
     );
 
     const result = await generateImage(prompt, images, true);
